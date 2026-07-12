@@ -16,6 +16,8 @@ public class V12StudioGamepack : IV12Gamepack
     public void OnStart()
     {
         var editor = Registry.Resolve<IEditor>();
-        editor?.CreateMainWindow();
+        var rootWidget = editor?.CreateMainWindow();
+        if (rootWidget != null)
+            Registry.Register("RootWidget", rootWidget);
     }
 }

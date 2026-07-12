@@ -1,3 +1,5 @@
+using V12.UI;
+
 namespace V12Studio.Editor
 {
     /// <summary>
@@ -6,6 +8,6 @@ namespace V12Studio.Editor
     /// </summary>
     public interface IEditor
     {
-        void CreateMainWindow();
+        IWidget CreateMainWindow();
     }
 }
