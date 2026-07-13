@@ -13,18 +13,18 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\V12\V12.csproj" />
-		<ProjectReference Include="..\V12TwoDog\V12TwoDog.Godot\V12TwoDog.Godot.csproj" />
+		<PackageReference Include="Finite.V12" Version="1.0.0" />
+		<PackageReference Include="Finite.V12.TwoDog.Godot" Version="1.0.0" />
 	</ItemGroup>
 
 	<!--<ItemGroup>
         <ProjectReference Include="../V12TwoDog.Godot/V12TwoDog.Godot.csproj"/>
     </ItemGroup>-->
 
-	<!-- Godot project location -->
-	<PropertyGroup>
+	<!-- TODO: Godot project is now in the nova repo; update this path or use package reference -->
+	<!-- <PropertyGroup>
 		<GodotProjectDir>../V12TwoDog/V12TwoDog.Godot</GodotProjectDir>
-	</PropertyGroup>
+	</PropertyGroup> -->
   <!-- Debug natives (opt-in) -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <TwoDogVariant>debug</TwoDogVariant>
