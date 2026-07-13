@@ -1,11 +1,50 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <OutputType>Library</OutputType>
-    <Nullable>enable</Nullable>
-    <LangVersion>10.0</LangVersion>
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsPackable>false</IsPackable>
+		<Configurations>Debug;Release;Editor</Configurations>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="2dog" Version="4.7.0.9" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\V12\V12.csproj" />
+		<ProjectReference Include="..\V12TwoDog\V12TwoDog.Godot\V12TwoDog.Godot.csproj" />
+	</ItemGroup>
+
+	<!--<ItemGroup>
+        <ProjectReference Include="../V12TwoDog.Godot/V12TwoDog.Godot.csproj"/>
+    </ItemGroup>-->
+
+	<!-- Godot project location -->
+	<PropertyGroup>
+		<GodotProjectDir>../V12TwoDog/V12TwoDog.Godot</GodotProjectDir>
+	</PropertyGroup>
+  <!-- Debug natives (opt-in) -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <TwoDogVariant>debug</TwoDogVariant>
   </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="../V12/V12.csproj" />
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <PackageReference Include="2dog.win-x64.debug" Version="4.7.0.5" />
   </ItemGroup>
+
+  <!-- Editor natives (opt-in, custom 'Editor' configuration) -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Editor'">
+    <TwoDogVariant>editor</TwoDogVariant>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Editor'">
+    <PackageReference Include="2dog.win-x64.editor" Version="4.7.0.5" />
+  </ItemGroup>
+	<!-- Remove duplicate Godot.SourceGenerators that come from the Godot project
+         (2dog package already embeds them) -->
+	<Target Name="RemoveDuplicateGodotAnalyzers" BeforeTargets="CoreCompile">
+		<ItemGroup>
+			<Analyzer Remove="@(Analyzer)" Condition="$([System.String]::Copy('%(Analyzer.Identity)').Contains('Godot.SourceGenerators'))" />
+		</ItemGroup>
+	</Target>
 </Project>

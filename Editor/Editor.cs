@@ -1,7 +1,7 @@
 using V12;
 using V12.UI;
 using V12.Rendering;
-
+using System;
 namespace V12Studio.Editor
 {
     public class Editor : IEditor
@@ -45,9 +45,11 @@ namespace V12Studio.Editor
             // Center — game viewport
             var viewportPanel = ui.CreatePanel("Game View");
             var rtf = Registry.Resolve<IRenderTargetFactory>();
+
             if (rtf != null)
             {
                 var viewportHost = ui.CreateViewportHost();
+                Console.WriteLine(viewportHost);
                 var target = rtf.Create(1280, 720);
                 viewportHost.SetRenderTarget(target);
                 viewportPanel.AddChild(viewportHost);
@@ -56,6 +58,7 @@ namespace V12Studio.Editor
             {
                 viewportPanel.AddChild(ui.CreateLabel("(No render target factory available)"));
             }
+
             mainRow.AddChild(viewportPanel);
 
             // Right panel — inspector placeholder
