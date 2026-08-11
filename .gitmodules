@@ -1,0 +1,3 @@
+[submodule "libs/nova"]
+	path = libs/nova
+	url = https://forgejo.finite.ovh/Finite/nova
