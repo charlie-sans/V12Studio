@@ -1,5 +1,3 @@
-using V12.UI;
-
 namespace V12Studio.Editor
 {
     /// <summary>
@@ -8,6 +6,8 @@ namespace V12Studio.Editor
     /// </summary>
     public interface IEditor
     {
-        IWidget CreateMainWindow();
+        /// <summary>Build the editor UI. Elements are added to the IUIBuilder's root
+        /// and rendered by PaperUIBuilder each frame.</summary>
+        void CreateMainWindow();
     }
 }

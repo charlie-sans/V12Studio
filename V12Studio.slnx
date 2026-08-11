@@ -1,3 +1,10 @@
 <Solution>
-  <Project Path="V12StudioPak.csproj" />
+  <Folder Name="/engine/">
+    <Project Path="libs/nova/libs/V12.Basic/libs/V12/V12.csproj" />
+  </Folder>
+  <Folder Name="/libs/">
+    <Project Path="libs/nova/Nova.Shared/Nova.Shared.csproj" />
+    <Project Path="libs/nova/V12TwoDog.2dog/V12TwoDog.csproj" />
+  </Folder>
+  <Project Path="src/V12StudioPak.csproj" />
 </Solution>
