@@ -15,20 +15,20 @@ using ProgressBarComponent = V12.Components.UI.ProgressBarComponent;
 namespace V12Studio.Editor
 {
     /// <summary>
-    /// Keeps the editor's Scene Hierarchy panel in sync with the V12 world.
+    /// Keeps the editor's Scene Hierarchy panel in sync with the editor's scene
+    /// world.
     ///
-    /// The world is the single source of truth: every tick this service walks
-    /// the active worlds (SelectedWorld first, then PersistentWorld), builds a
-    /// tree signature, and only when the tree actually changed does it rebuild
-    /// the hierarchy element tree under <c>_treeRoot</c> (an element bearing a
-    /// TreeComponent). WorldCanvasSystem mirrors that element nesting onto a
-    /// Godot Tree control, giving native collapse arrows and indentation.
+    /// The scene world is the single source of truth: every tick this service
+    /// walks it, builds a tree signature, and only when the tree actually
+    /// changed does it rebuild the hierarchy element tree under
+    /// <c>_treeRoot</c> (an element bearing a TreeComponent). WorldCanvasSystem
+    /// mirrors that element nesting onto a Godot Tree control, giving native
+    /// collapse arrows and indentation.
     ///
-    /// Editor chrome (the screen-space canvas and its pure-UI subtrees) is
-    /// filtered out so the panel shows scene content — meshes, lights, cameras,
-    /// entities — not the editor's own buttons. Hidden elements don't produce
-    /// rows, but their children are still walked (a viewport lives under the
-    /// hidden MainContent splitter).
+    /// The editor's own chrome (the screen-space canvas, panels, component
+    /// viewer) lives in PersistentWorld and is simply never walked — only the
+    /// scene world is mirrored, so the sidebar shows scene content (meshes,
+    /// lights, cameras, entities) and nothing else.
     ///
     /// Runs as an IGameService on the V12 worker thread; world mutations go
     /// through Element.AddChild/RemoveChild which take the world write lock, so
@@ -39,15 +39,18 @@ namespace V12Studio.Editor
         private readonly Element _treeRoot;
         private readonly Element _fpsLabel;
         private readonly Action<IWorldElement?> _onSelect;
+        private readonly World _sceneWorld;
         private string _signature = "";
         private long _selectedId;
         private float _fps = 60f;
 
-        public HierarchySyncService(Element treeRoot, Element fpsLabel, Action<IWorldElement?> onSelect)
+        public HierarchySyncService(Element treeRoot, Element fpsLabel,
+            Action<IWorldElement?> onSelect, World sceneWorld)
         {
             _treeRoot = treeRoot;
             _fpsLabel = fpsLabel;
             _onSelect = onSelect;
+            _sceneWorld = sceneWorld;
         }
 
         public void Initialize(GameRoot g) { }
@@ -90,9 +93,7 @@ namespace V12Studio.Editor
         private string BuildSignature(GameRoot root)
         {
             var sb = new StringBuilder();
-            if (root.SelectedWorld != null)
-                SigWorld(sb, root.SelectedWorld);
-            SigWorld(sb, root.PersistentWorld);
+            SigWorld(sb, _sceneWorld);
             sb.Append("#sel=").Append(_selectedId);
             return sb.ToString();
         }
@@ -129,9 +130,7 @@ namespace V12Studio.Editor
         private void RebuildTree(GameRoot root)
         {
             var roots = new List<NodeInfo>();
-            if (root.SelectedWorld != null)
-                CollectWorld(root.SelectedWorld, roots);
-            CollectWorld(root.PersistentWorld, roots);
+            CollectWorld(_sceneWorld, roots);
 
             // No world locks held here — safe to mutate the element tree.
             foreach (var child in _treeRoot.Children.ToList())
@@ -201,9 +200,9 @@ namespace V12Studio.Editor
                 AddNode(child, el);
         }
 
-        /// <summary>True when the element only carries UI/layout components (or a
-        /// screen-space canvas) — i.e. it's editor chrome, not scene content.
-        /// Viewports are always shown (they contain the scene).</summary>
+        /// <summary>True when the element only carries UI/layout components — a
+        /// safety net: the scene world should contain scene content only, but
+        /// stray UI elements are still hidden from the sidebar.</summary>
         private static bool ShouldHide(IWorldElement el)
         {
             if (el.GetComponent<CanvasComponent>() != null) return true;

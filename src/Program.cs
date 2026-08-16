@@ -15,7 +15,7 @@ namespace V12StudioPak
         {
             GameRoot.ConfigureLogging();
             Console.WriteLine("Welcome to V12Studio");
-
+            
             var editor = new Editor();
             using var host = new V12TwoDog.V12Host();
             
