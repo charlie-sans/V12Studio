@@ -6,7 +6,6 @@ using V12.Rendering;
 using V12.Core.Interfaces.Renderer;
 using V12.Basic.Components;
 using V12.WorldML;
-using V12TwoDog;
 using System;
 using System.Numerics;
 
@@ -92,6 +91,7 @@ namespace V12Studio.Editor
         /// viewport gizmo, and fills the inspector.</summary>
         public void Select(IWorldElement? el)
         {
+            Console.WriteLine($"[Editor] Select -> {el?.Name ?? "(none)"}");
             _selected = el;
             if (_hierarchy != null) _hierarchy.SetSelected(el?.Id ?? 0);
             _interaction?.SetGizmoTarget(el);
@@ -595,8 +595,13 @@ namespace V12Studio.Editor
             addElNameRow.AddChild(addElName);
             hierarchyPanel.AddChild(addElNameRow);
 
+            // Five buttons don't fit one row of a 230px sidebar without squeezing
+            // the labels, so lay them out 3 + 2.
             var shapeRow = new Element("AddElementShapes");
             shapeRow.AddComponent(new HLayoutComponent { Spacing = 4, Padding = 0 });
+            var shapeRow2 = new Element("AddElementShapes2");
+            shapeRow2.AddComponent(new HLayoutComponent { Spacing = 4, Padding = 0 });
+            int shapeIndex = 0;
             foreach (var (label, shape) in new[]
             {
                 ("Box", MeshShape.Box), ("Sphere", MeshShape.Sphere),
@@ -607,9 +612,10 @@ namespace V12Studio.Editor
                 var btn = new Element("AddEl_" + label);
                 btn.AddComponent(new ButtonComponent(label, () => AddElement(shape)));
                 btn.AddComponent(new LayoutElementComponent { FlexibleWidth = 1, MinHeight = 24 });
-                shapeRow.AddChild(btn);
+                (shapeIndex++ < 3 ? shapeRow : shapeRow2).AddChild(btn);
             }
             hierarchyPanel.AddChild(shapeRow);
+            hierarchyPanel.AddChild(shapeRow2);
 
             // Center — game viewport: a 3D scene panel. Elements under it render
             // inside a SubViewport (ViewportComponent), and RenderWorld=true
