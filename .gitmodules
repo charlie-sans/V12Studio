@@ -1,6 +1,6 @@
 [submodule "libs/nova"]
 	path = libs/nova
-	url = https://forgejo.finite.ovh/Finite/nova
+	url = https://github.com/Fy-nite/Nova.git
 [submodule "libs/V12.Monogame"]
 	path = libs/V12.Monogame
-	url = https://git.finite.ovh/V12.Monogame
+	url = https://github.com/Fy-nite/V12.Monogame.git
