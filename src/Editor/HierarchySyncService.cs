@@ -112,6 +112,9 @@ namespace V12Studio.Editor
 
         private void SigElement(StringBuilder sb, IWorldElement el)
         {
+            // Editor-transient subtrees (gizmo handles) never appear: skip
+            // the whole subtree, children included.
+            if (EditorTransientComponent.IsTransient(el)) return;
             if (ShouldHide(el)) return;
             sb.Append(el.Id).Append('|').Append(el.Name ?? "").Append(';');
             foreach (var child in el.Children)
@@ -151,20 +154,23 @@ namespace V12Studio.Editor
                     World = true
                 };
                 foreach (var el in world.Root)
-                    CollectElement(el, worldNode.Children);
+                    CollectElement(el, worldNode.Children, 0);
                 roots.Add(worldNode);
             }
             finally { world.Lock.ExitReadLock(); }
         }
 
-        private void CollectElement(IWorldElement el, List<NodeInfo> outList)
+        private void CollectElement(IWorldElement el, List<NodeInfo> outList, int depth)
         {
+            // Editor-transient subtrees (gizmo handles) never appear: skip
+            // the whole subtree, children included.
+            if (EditorTransientComponent.IsTransient(el)) return;
             if (ShouldHide(el))
             {
                 // Editor chrome: no row, but children may hold scene content
                 // (e.g. the GameView viewport under the hidden MainContent).
                 foreach (var child in el.Children)
-                    CollectElement(child, outList);
+                    CollectElement(child, outList, depth);
                 return;
             }
 
@@ -173,10 +179,11 @@ namespace V12Studio.Editor
                 Key = "e:" + el.Id,
                 Text = string.IsNullOrEmpty(el.Name) ? "<unnamed>" : el.Name,
                 Selected = el.Id == _selectedId,
-                Target = el
+                Target = el,
+                Depth = depth
             };
             foreach (var child in el.Children)
-                CollectElement(child, node.Children);
+                CollectElement(child, node.Children, depth + 1);
             outList.Add(node);
         }
 
@@ -191,7 +198,10 @@ namespace V12Studio.Editor
             else
             {
                 var target = node.Target;
-                el.AddComponent(new ButtonComponent(node.Text, () => _onSelect?.Invoke(target)));
+                // The MG sidebar flattens row nesting (see GumUIRenderer), so
+                // depth is baked into the label: two spaces per level.
+                var label = node.Depth > 0 ? new string(' ', node.Depth * 2) + node.Text : node.Text;
+                el.AddComponent(new ButtonComponent(label, () => _onSelect?.Invoke(target)));
                 if (node.Selected)
                     el.AddComponent(new UIStyleComponent { StyleHint = "selected" });
             }
@@ -230,6 +240,7 @@ namespace V12Studio.Editor
             public string Text = "";
             public bool World;
             public bool Selected;
+            public int Depth;
             public IWorldElement? Target;
             public List<NodeInfo> Children = new();
         }
