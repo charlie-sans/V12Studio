@@ -10,7 +10,7 @@
   <Folder Name="/libs/">
     <Project Path="libs/nova/Nova.Shared/Nova.Shared.csproj" />
     <Project Path="libs/nova/V12TwoDog.2dog/V12TwoDog.csproj" />
-    <Project Path="V12-sdk/V12.Sdk.csproj" />
+    <Project Path="libs/V12-sdk/V12.Sdk.csproj" />
   </Folder>
   <Folder Name="/libs/nova/" />
   <Folder Name="/libs/nova/libs/">
