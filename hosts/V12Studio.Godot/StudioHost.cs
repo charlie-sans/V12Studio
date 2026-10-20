@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using Godot;
 using V12;
@@ -42,7 +43,11 @@ namespace V12Studio.Godot
         private string? _menuName;
         private string? _saveScenePath;
         private string? _loadScenePath;
+        private string? _projectPath;
+        private string? _newProjectTemplate;
+        private string? _newProjectPath;
         private bool _probePick;
+        private bool _probeGizmoScale;
         private int _frameCount;
 
         public override void _Ready()
@@ -63,8 +68,16 @@ namespace V12Studio.Godot
                     _saveScenePath = arg.Substring("--save-scene=".Length);
                 else if (arg.StartsWith("--load-scene=", StringComparison.OrdinalIgnoreCase))
                     _loadScenePath = arg.Substring("--load-scene=".Length);
+                else if (arg.StartsWith("--project=", StringComparison.OrdinalIgnoreCase))
+                    _projectPath = arg.Substring("--project=".Length);
+                else if (arg.StartsWith("--new-project=", StringComparison.OrdinalIgnoreCase))
+                    _newProjectTemplate = arg.Substring("--new-project=".Length);
+                else if (arg.StartsWith("--new-project-path=", StringComparison.OrdinalIgnoreCase))
+                    _newProjectPath = arg.Substring("--new-project-path=".Length);
                 else if (arg.Equals("--probe-pick", StringComparison.OrdinalIgnoreCase))
                     _probePick = true;
+                else if (arg.Equals("--probe-gizmo-scale", StringComparison.OrdinalIgnoreCase))
+                    _probeGizmoScale = true;
             }
 
             var options = new V12RuntimeOptions
@@ -140,6 +153,8 @@ namespace V12Studio.Godot
             window.CallDeferred(Node.MethodName.AddChild, containerControl);
 
             var shell = new StudioShell(_ui, session, ProjectSettings.GlobalizePath("res://"));
+            if (!string.IsNullOrEmpty(_projectPath) && Directory.Exists(_projectPath))
+                session.ProjectDir = _projectPath;
             var root = shell.Build(container, gameViewPanel);
             if (root.NativeControl is Control rootControl)
                 GrowAll(rootControl);
@@ -184,9 +199,20 @@ namespace V12Studio.Godot
             _viewportAdapter?.ApplyEditorDrivenTransforms();
             _ui?.ProcessFrame(delta);
 
-            if (_screenshotPath != null || _probePick)
+            if (_screenshotPath != null || _probePick || _probeGizmoScale)
             {
-                if (++_frameCount >= 120 && _editorWindow != null
+                _frameCount++;
+                // Gizmo constant-screen-size diagnosis: select, log, teleport the
+                // camera back, log again (GizmoScaleProbe.cs for the stages).
+                if (_probeGizmoScale && _runtime != null && _session != null
+                    && _renderer != null && _viewportAdapter != null)
+                {
+                    GizmoScaleProbe.Tick(_frameCount, _session, _renderer,
+                        _viewportAdapter, _viewportElementId);
+                }
+
+                int quitAt = _probeGizmoScale ? 150 : 120;
+                if (_frameCount >= quitAt && _editorWindow != null
                     && GodotObject.IsInstanceValid(_editorWindow))
                 {
                     DumpLayout(_editorWindow, 0);
@@ -362,6 +388,17 @@ namespace V12Studio.Godot
                     ? $" split={string.Join(",", container.SplitOffsets)} vertical={container.Vertical}"
                     : "";
                 writer.WriteLine($"{indent}{control.GetType().Name} name='{control.Name}' pos={rect.Position} size={rect.Size} min={min} flags=({control.SizeFlagsHorizontal},{control.SizeFlagsVertical}){split}{DumpText(control)}");
+            }
+            else if (node is PopupMenu popupMenu)
+            {
+                // Popup menus are Windows, not Controls — the walker above
+                // skips them, and their items are not nodes at all. Write the
+                // item captions so a dump can verify menu contents.
+                var indent = new string(' ', depth * 2);
+                var items = new System.Collections.Generic.List<string>();
+                for (int i = 0; i < popupMenu.ItemCount; i++)
+                    items.Add(popupMenu.GetItemText(i));
+                writer.WriteLine($"{indent}PopupMenu name='{popupMenu.Name}' pos={popupMenu.Position} size={popupMenu.Size} visible={popupMenu.Visible} items=[{string.Join(" | ", items)}]");
             }
             foreach (var child in node.GetChildren())
                 WriteLayout(child, writer, depth + 1);

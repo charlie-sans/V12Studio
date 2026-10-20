@@ -1,0 +1,5 @@
+﻿{
+    ""projectName"": ""{{PROJECT_NAME}} "",
+    ""author"": ""{{AUTHOR}} "",
+    ""created"": "{{DATE}}"
+}

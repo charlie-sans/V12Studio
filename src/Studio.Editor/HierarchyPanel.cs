@@ -87,6 +87,9 @@ namespace V12Studio.Editor
 
         private void AddRecursive(ITreeItem? parent, IWorldElement el, HashSet<IWorldElement> expanded)
         {
+            // Editor plumbing (the camera, the game-view router) is real but not
+            // user scene content: keep it out of the outliner.
+            if (V12.Components.EditorOnlyComponent.IsEditorOnly(el)) return;
             var item = _tree.AddItem(parent, el.Name ?? "(unnamed)", el);
             item.IconKey = IconKeyFor(el);
             if (expanded.Contains(el))

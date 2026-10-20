@@ -123,6 +123,20 @@ namespace V12Studio.Editor
                     });
             }));
 
+            bar.AddItem(UI.CreateButton("Project", () =>
+            {
+                var fp = UI.CreateFilePicker();
+                fp.ShowOpen("Select Project Folder", "", new string[] { }, path =>
+                {
+                    if (path != null && Directory.Exists(path))
+                    {
+                        Session.ProjectDir = path;
+                        // The Project panel and other UI will reflect the new project
+                        // on the next scene load / Inspector refresh.
+                    }
+                });
+            }));
+
             IDropdown add = null!;
             add = UI.CreateDropdown(new[]
             {

@@ -14,6 +14,7 @@ using MeshComponent = V12.Components.MeshComponent;
 using MeshRenderer = V12.Components.Renderables.MeshRenderer;
 using MaterialComponent = V12.Components.MaterialComponent;
 using GenericLightComponent = V12.Components.GenericLightComponent;
+using NonPersistentComponent = V12.Components.NonPersistentComponent;
 
 namespace V12Studio.Core
 {
@@ -82,7 +83,7 @@ namespace V12Studio.Core
                 CreateDemoScene();
 
             Interaction?.SetSelectHandler(Select);
-            Interaction?.SetEditorCamera(FindSceneElement("ViewportCamera"));
+            EnsureEditorCamera();
             Interaction?.SetGizmoTarget(Selected);
         }
 
@@ -111,7 +112,7 @@ namespace V12Studio.Core
             foreach (var child in SceneWorld.Root.ToList())
                 SceneWorld.RemoveElement(child);
             EnsureViewportElement();
-            Interaction?.SetEditorCamera(null);
+            EnsureEditorCamera(); // camera is editor-owned: recreate for the fresh scene
             SetScenePath(null);
             NotifyHierarchyChanged();
             Log.Info("New scene.");
@@ -171,7 +172,7 @@ namespace V12Studio.Core
                 }
                 EnsureViewportElement(); // loaded scenes may not carry one
 
-                Interaction?.SetEditorCamera(FindSceneElement("ViewportCamera"));
+                EnsureEditorCamera(); // likewise: the orbit camera is editor-owned
                 SetScenePath(full);
                 NotifyHierarchyChanged();
                 Log.Info($"Scene loaded from {full} ({SceneWorld.Root.Count} root elements).");
@@ -226,18 +227,43 @@ namespace V12Studio.Core
             greenCapsule.LocalTransform = new TRS { Position = new Vector3(1.6f, 0.7f, 0f), Rotation = Quaternion.Identity, Scale = Vector3.One };
             SceneWorld.AddElement(greenCapsule);
 
-            var camera = new Element("ViewportCamera");
-            camera.AddComponent(new CameraComponent { Active = true, IsCurrent = true, Fov = 60f, FarClip = 1000f });
-            camera.LocalTransform = new TRS
-            {
-                Position = new Vector3(0f, 2.6f, 7f),
-                Rotation = Quaternion.CreateFromYawPitchRoll(0f, -0.35f, 0f),
-                Scale = Vector3.One
-            };
-            SceneWorld.AddElement(camera);
+            EnsureEditorCamera();
 
             NotifyHierarchyChanged();
             Log.Info($"Demo scene created ({SceneWorld.Root.Count} root elements).");
+        }
+
+        /// <summary>
+        /// Ensure the scene world carries the editor's orbit camera: an element
+        /// named "ViewportCamera" with an IsCurrent CameraComponent, marked
+        /// <see cref="NonPersistentComponent"/> so it renders and picks in the
+        /// editor but is never written to the saved world. Re-adopted from the
+        /// scene when one was authored there; created fresh otherwise. Binds it
+        /// to the viewport interaction service when present.
+        /// </summary>
+        public void EnsureEditorCamera()
+        {
+            if (SceneWorld == null) return;
+
+            var cam = FindSceneElement("ViewportCamera");
+            if (cam == null)
+            {
+                cam = new Element("ViewportCamera");
+                cam.AddComponent(new CameraComponent { Active = true, IsCurrent = true, Fov = 60f, FarClip = 1000f });
+                cam.LocalTransform = new TRS
+                {
+                    Position = new Vector3(0f, 2.6f, 7f),
+                    Rotation = Quaternion.CreateFromYawPitchRoll(0f, -0.35f, 0f),
+                    Scale = Vector3.One
+                };
+                SceneWorld.AddElement(cam);
+            }
+            if (cam.GetComponent<NonPersistentComponent>() == null)
+                cam.AddComponent(new NonPersistentComponent()); // editor-owned: kept out of the saved world
+            if (cam.GetComponent<EditorOnlyComponent>() == null)
+                cam.AddComponent(new EditorOnlyComponent()); // editor plumbing: hidden from the hierarchy
+
+            Interaction?.SetEditorCamera(cam);
         }
 
         /// <summary>Find an element by name anywhere in the scene world.</summary>
@@ -276,12 +302,15 @@ namespace V12Studio.Core
                 .FirstOrDefault(e => e.GetComponent<ViewportComponent>() is { RenderWorld: true });
             if (existing != null)
             {
+                if (existing.GetComponent<EditorOnlyComponent>() == null)
+                    existing.AddComponent(new EditorOnlyComponent());
                 ViewportElement = existing;
                 return;
             }
 
             var vp = new Element("EditorViewport");
             vp.AddComponent(new ViewportComponent { RenderWorld = true });
+            vp.AddComponent(new EditorOnlyComponent()); // editor plumbing: hidden from the hierarchy
             SceneWorld.AddElement(vp);
             ViewportElement = vp;
             Log.Info($"Editor viewport element created (id {vp.Id}).");

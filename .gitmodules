@@ -4,3 +4,6 @@
 [submodule "libs/V12.Monogame"]
 	path = libs/V12.Monogame
 	url = https://github.com/Fy-nite/V12.Monogame.git
+[submodule "V12-sdk"]
+	path = V12-sdk
+	url = https://github.com/fy-nite/V12-sdk

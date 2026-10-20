@@ -8,6 +8,7 @@ using V12.UI;
 using V12Studio.Core;
 using ScriptComponent = V12.Components.ScriptComponent;
 using TransformComponent = V12.Components.TransformComponent;
+using NonPersistentComponent = V12.Components.NonPersistentComponent;
 
 namespace V12Studio.Editor
 {
@@ -24,6 +25,7 @@ namespace V12Studio.Editor
 
         private IWidget? _currentRoot;
         private IButton? _addComponentButton;
+        private bool _showingForm;
 
         public IPanel Panel { get; }
 
@@ -76,6 +78,10 @@ namespace V12Studio.Editor
             box.AddChild(_ui.CreateLabel("Components"));
             foreach (var component in sel.Components.ToList())
             {
+                // Internal persistence marker (e.g. on the editor camera):
+                // plumbing, not an authored component.
+                if (component is NonPersistentComponent) continue;
+
                 var row = _ui.CreateHBox();
                 row.AddChild(InspectorLayout.RowLabel(_ui, FriendlyName(component)));
                 var remove = _ui.CreateButton("Remove", () =>
@@ -103,6 +109,18 @@ namespace V12Studio.Editor
                 }
                 else
                 {
+                    // Persistence switch: unchecked = the component is editor/
+                    // runtime only and is skipped by the WorldML serializer on
+                    // save/export. The element's pose always round-trips (it
+                    // lives on the element), so TransformComponent above has no
+                    // such row.
+                    var persistRow = _ui.CreateHBox();
+                    persistRow.AddChild(InspectorLayout.RowLabel(_ui, "Save with world"));
+                    var persistBox = _ui.CreateCheckbox("", component.IsPersistent);
+                    persistBox.SetOnChanged(v => component.IsPersistent = v);
+                    persistRow.AddChild(persistBox);
+                    fields.AddChild(persistRow);
+
                     try
                     {
                         component.BuildInspector(adapter);
@@ -119,6 +137,8 @@ namespace V12Studio.Editor
                     // component reads as one unit instead of trailing rows.
                     if (component is ScriptComponent script)
                         hasInspectorContent |= AddScriptFields(fields, script);
+
+                    hasInspectorContent = true; // the persistence row is always content
                 }
 
                 if (hasInspectorContent)
@@ -128,6 +148,7 @@ namespace V12Studio.Editor
             var add = _ui.CreateButton("Add Component…", () => ShowAddComponentMenu(sel));
             _addComponentButton = add;
             box.AddChild(add);
+            _showingForm = false;
             SetContent(box);
         }
 
@@ -141,9 +162,11 @@ namespace V12Studio.Editor
         public void ShowAddComponentMenu(IWorldElement target)
         {
             if (!ReferenceEquals(_session.Selected, target))
-                _session.Select(target); // fires SelectionChanged → ShowMain
-            else
-                ShowMain();              // re-render so the anchor button exists
+                _session.Select(target);          // fires SelectionChanged → ShowMain
+            else if (_showingForm)
+                ShowMain();                       // swap the form back to the list
+            // Main list already showing: keep it (and the user's scroll
+            // position) — the anchor button is laid out and stays valid.
             if (_addComponentButton == null) return;
             BuildAddComponentMenu(target).ShowAt(_addComponentButton);
         }
@@ -202,6 +225,7 @@ namespace V12Studio.Editor
         public void ShowNewComponentForm(IWorldElement target)
         {
             var form = new NewComponentForm(_shell, target, onFinished: ShowMain);
+            _showingForm = true;
             SetContent(form.Build());
         }
 
@@ -241,6 +265,7 @@ namespace V12Studio.Editor
         private static readonly System.Collections.Generic.HashSet<string> GeneratedFieldExclusions = new(StringComparer.Ordinal)
         {
             "Id", "EntityId", "Owner", "IsDirty", "Name", "Description",
+            "IsPersistent", // has its own "Save with world" row per component block
             "Runtime", "IsInitialized", "IsPlaying", "Position", "Forward", "Up",
             "RenderType", "Transform", "WorldTransform", "LocalTransform", "IsWorldLocked",
             "Material", "MeshPoints", "Indices", "PrimaryTexture", "RX", "RY", "RZ",

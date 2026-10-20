@@ -1,0 +1,20 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <RootNamespace>V12Studio.Godot</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Must be the SAME project path V12StudioPak references internally.
+         Referencing the same project under a different path creates two
+         projects with the identity V12/1.0.0, which makes the SDK drop V12
+         from deps.json and Godot's PluginLoadContext cannot resolve it. -->
+    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
+    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
+    <ProjectReference Include="..\..\libs\nova\Nova.Shared\Nova.Shared.csproj" />
+    <ProjectReference Include="..\..\src\V12StudioPak.csproj" />
+    <ProjectReference Include="..\..\src\Studio.Core\Studio.Core.csproj" />
+    <ProjectReference Include="..\..\src\Studio.Editor\Studio.Editor.csproj" />
+  </ItemGroup>
+</Project>
