@@ -4,6 +4,7 @@ How a renderer backend (MonoGame, Godot/nova, anything else) plugs into V12.
 One rule governs everything: **V12 determines placement; renderers mirror the
 tree and set locations.** No renderer computes placement from components.
 
+
 ## Feeds
 
 Two feeds carry the same data in different shapes. Either is sufficient.

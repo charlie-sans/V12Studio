@@ -10,9 +10,12 @@
 	<ItemGroup>
 	  <Compile Remove="StudioLauncher\**" />
 	  <Compile Remove="StudioLauncher.Monogame\**" />
+	  <Compile Remove="Studio.Editor\**" />
+	  <Compile Remove="Studio.Core\**" />
 	</ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\libs\V12.Monogame\libs\V12.Basic\libs\V12\V12.csproj" />
-    <ProjectReference Include="..\libs\V12.Monogame\libs\V12.Basic\V12.Basic.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+    <ProjectReference Include="..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
+    <ProjectReference Include="..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
+    <ProjectReference Include="..\libs\nova\libs\V12.Basic\libs\V12.Pak\V12.Pak.csproj" />
+	</ItemGroup>
 </Project>

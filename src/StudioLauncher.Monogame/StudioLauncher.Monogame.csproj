@@ -11,7 +11,7 @@
 	  <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.3" />
 	</ItemGroup>
 	<ItemGroup>
-	  <ProjectReference Include="..\..\libs\V12.Monogame\libs\V12.Monogame\V12.Monogame\V12.Monogame.csproj" />
+	  <ProjectReference Include="..\..\libs\V12.Monogame\V12.Monogame\V12.Monogame.csproj" />
 	  <ProjectReference Include="..\V12StudioPak.csproj" />
 	</ItemGroup>
 </Project>

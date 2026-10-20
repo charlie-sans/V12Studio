@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>V12Studio.Editor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\V12StudioPak.csproj" />
+    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
+    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
+  </ItemGroup>
+
+</Project>

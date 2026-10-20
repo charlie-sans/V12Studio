@@ -28,6 +28,7 @@
     <Project Path="libs/nova/libs/V12.Basic/libs/Contract/libs/Objekt-RT/src/ObjectRT.VM/ObjectRT.VM.csproj" />
   </Folder>
   <Project Path="src/V12StudioPak.csproj" />
+  <Project Path="src/Studio.Core/Studio.Core.csproj" />
   <Project Path="src/StudioLauncher/StudioLauncher.csproj" />
   <Project Path="src/StudioLauncher.Monogame/StudioLauncher.Monogame.csproj" />
 </Solution>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>V12Studio.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
+    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
+  </ItemGroup>
+
+</Project>
