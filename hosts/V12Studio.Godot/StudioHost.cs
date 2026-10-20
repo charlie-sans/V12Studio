@@ -29,7 +29,6 @@ namespace V12Studio.Godot
         private long _viewportElementId;
         private Window? _editorWindow;
         private StudioSession? _session;
-
         /// <summary>Debug aid: --screenshot=path.png captures the editor window
         /// after two seconds of frames and quits (used to verify layout).
         /// --select=Name selects a scene element, --new-component-form=Name
@@ -52,6 +51,7 @@ namespace V12Studio.Godot
 
         public override void _Ready()
         {
+       
             foreach (var arg in OS.GetCmdlineUserArgs())
             {
                 if (arg.StartsWith("--screenshot=", StringComparison.OrdinalIgnoreCase))
@@ -109,6 +109,7 @@ namespace V12Studio.Godot
             var session = editor.Session;
             _session = session;
             session.Interaction = interaction;
+            session.Dispatch = a => Callable.From(a).CallDeferred();
             session.Start(); // scene world + EditorViewport element + demo content
 
             var vpElement = session.ViewportElement

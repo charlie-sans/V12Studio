@@ -1,0 +1,21 @@
+<Project>
+
+  <!--
+    Locations of the V12 libraries the studio builds against. Each entry is only
+    a DEFAULT: override it (e.g. -p:V12BasicProject=..\V12.Basic\V12.Basic.csproj)
+    to build against a different checkout — a versioned copy, or a monorepo
+    where the libraries sit side by side instead of nested under libs/nova.
+
+    Keep every reference to a given library pointing at ONE path. The same
+    project reached under two different paths gets two identities (e.g.
+    V12/1.0.0), which makes the SDK drop it from deps.json and Godot's
+    PluginLoadContext then cannot resolve the DLL at runtime.
+  -->
+  <PropertyGroup>
+    <V12BasicProject Condition="'$(V12BasicProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/V12.Basic.csproj</V12BasicProject>
+    <V12EngineProject Condition="'$(V12EngineProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/libs/V12/V12.csproj</V12EngineProject>
+    <V12PakProject Condition="'$(V12PakProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/libs/V12.Pak/V12.Pak.csproj</V12PakProject>
+    <V12MonogameProject Condition="'$(V12MonogameProject)' == ''">$(MSBuildThisFileDirectory)libs/V12.Monogame/V12.Monogame/V12.Monogame.csproj</V12MonogameProject>
+  </PropertyGroup>
+
+</Project>

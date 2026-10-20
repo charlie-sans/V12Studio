@@ -9,8 +9,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\V12StudioPak.csproj" />
-    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
-    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
+    <ProjectReference Include="$(V12BasicProject)" />
+    <ProjectReference Include="$(V12EngineProject)" />
   </ItemGroup>
 
 </Project>

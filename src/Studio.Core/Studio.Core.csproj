@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
-    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
+    <ProjectReference Include="$(V12EngineProject)" />
+    <ProjectReference Include="$(V12BasicProject)" />
   </ItemGroup>
 
 </Project>

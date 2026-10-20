@@ -14,8 +14,8 @@
 	  <Compile Remove="Studio.Core\**" />
 	</ItemGroup>
 	<ItemGroup>
-    <ProjectReference Include="..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
-    <ProjectReference Include="..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
-    <ProjectReference Include="..\libs\nova\libs\V12.Basic\libs\V12.Pak\V12.Pak.csproj" />
+    <ProjectReference Include="$(V12EngineProject)" />
+    <ProjectReference Include="$(V12BasicProject)" />
+    <ProjectReference Include="$(V12PakProject)" />
 	</ItemGroup>
 </Project>

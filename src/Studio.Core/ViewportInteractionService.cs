@@ -62,6 +62,7 @@ namespace V12Studio.Core
         private Action<IWorldElement?>? _selectHandler;
         private IWorldElement? _editorCam;
         private IWorldElement? _gizmoTarget;
+        private IWorldElement? _gizmoRootDriven;
         private GizmoMode _mode = GizmoMode.Translate;
 
         // Free-fly camera pose (position + yaw/pitch). The pivot is the orbit
@@ -203,11 +204,17 @@ namespace V12Studio.Core
             if (target != null)
             {
                 var world = _root.GetWorldForElement(target);
-                if (world == null) _gizmo.Destroy();
+                if (world == null) { ReleaseGizmoRoot(); _gizmo.Destroy(); }
                 else if (GizmoOriginAndSize(_gizmoViewportId, out var origin, out var size))
+                {
                     _gizmo.Sync(world, target, _mode, origin, size);
+                    // Direct-drive the root so the gizmo tracks the target the same
+                    // frame (no snapshot glide that makes it trail during a drag).
+                    DriveGizmoRoot();
+                }
                 if (_dragAxis >= 0) QueueDirect(target);
             }
+            else ReleaseGizmoRoot();
         }
 
         private void TickInput(float dt)
@@ -248,9 +255,16 @@ namespace V12Studio.Core
 
             // T / R / S switch gizmo mode on the key's press edge (editor
             // convention). Edge, not held, so a held T can't shadow a later R.
-            if (KeyPressedNow(keys, InputKeys.T)) SetGizmoMode(GizmoMode.Translate);
-            else if (KeyPressedNow(keys, InputKeys.R)) SetGizmoMode(GizmoMode.Rotate);
-            else if (KeyPressedNow(keys, InputKeys.S)) SetGizmoMode(GizmoMode.Scale);
+            // Never while the camera is in hand (RMB/MMB held or an orbit/pan/
+            // look gesture live): mode keys pressed mid-flight must not yank the
+            // gizmo out from under the drag.
+            bool cameraBusy = s.RightDown || s.MiddleDown || _looking || _orbiting || _panning;
+            if (!cameraBusy)
+            {
+                if (KeyPressedNow(keys, InputKeys.T)) SetGizmoMode(GizmoMode.Translate);
+                else if (KeyPressedNow(keys, InputKeys.R)) SetGizmoMode(GizmoMode.Rotate);
+                else if (KeyPressedNow(keys, InputKeys.S)) SetGizmoMode(GizmoMode.Scale);
+            }
 
             // ── RMB: fly-look ────────────────────────────────────────────
             bool rmb = s.RightDown;
@@ -489,6 +503,31 @@ namespace V12Studio.Core
         {
             if (!_directDriven.Remove(element)) return;
             _direct?.ReleaseElementTransformDirect(element);
+        }
+
+        /// <summary>Direct-drive the gizmo root so its position + uniform scale
+        /// land the same frame the target moves (no snapshot glide that makes the
+        /// gizmo trail during a drag). The root's local transform already carries
+        /// origin + scale from the last Sync. Releases a stale root first when
+        /// the tree was rebuilt (mode/target change swapped the root).</summary>
+        private void DriveGizmoRoot()
+        {
+            if (_direct == null) return;
+            var root = _gizmo.Root;
+            if (root == null) { ReleaseGizmoRoot(); return; }
+            if (!ReferenceEquals(_gizmoRootDriven, root))
+            {
+                ReleaseGizmoRoot();
+                _gizmoRootDriven = root;
+            }
+            QueueDirect(root);
+        }
+
+        private void ReleaseGizmoRoot()
+        {
+            if (_gizmoRootDriven == null) return;
+            ReleaseDirect(_gizmoRootDriven);
+            _gizmoRootDriven = null;
         }
 
         // ── Picking ───────────────────────────────────────────────────────

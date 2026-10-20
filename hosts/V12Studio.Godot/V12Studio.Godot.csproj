@@ -10,8 +10,8 @@
          Referencing the same project under a different path creates two
          projects with the identity V12/1.0.0, which makes the SDK drop V12
          from deps.json and Godot's PluginLoadContext cannot resolve it. -->
-    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\libs\V12\V12.csproj" />
-    <ProjectReference Include="..\..\libs\nova\libs\V12.Basic\V12.Basic.csproj" />
+    <ProjectReference Include="$(V12EngineProject)" />
+    <ProjectReference Include="$(V12BasicProject)" />
     <ProjectReference Include="..\..\libs\nova\Nova.Shared\Nova.Shared.csproj" />
     <ProjectReference Include="..\..\src\V12StudioPak.csproj" />
     <ProjectReference Include="..\..\src\Studio.Core\Studio.Core.csproj" />

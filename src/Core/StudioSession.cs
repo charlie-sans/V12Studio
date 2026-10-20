@@ -15,6 +15,7 @@ using MeshRenderer = V12.Components.Renderables.MeshRenderer;
 using MaterialComponent = V12.Components.MaterialComponent;
 using GenericLightComponent = V12.Components.GenericLightComponent;
 using NonPersistentComponent = V12.Components.NonPersistentComponent;
+using EditorOnlyComponent = V12.Components.EditorOnlyComponent;
 
 namespace V12Studio.Core
 {
@@ -28,7 +29,11 @@ namespace V12Studio.Core
     public sealed class StudioSession : IEditor
     {
         private int _addSerial;
-
+        public Action<Action>? Dispatch { get; set; }
+        public void SelectFromWorker(IWorldElement? el)
+        {
+            if (Dispatch != null) Dispatch(() => Select(el)); else Select(el);
+        }
         public GameRoot Root { get; }
         public World? SceneWorld { get; private set; }
         public IWorldElement? Selected { get; private set; }
@@ -82,7 +87,7 @@ namespace V12Studio.Core
             if (SceneWorld.Root.Count == 1) // only the viewport element: nothing to edit yet
                 CreateDemoScene();
 
-            Interaction?.SetSelectHandler(Select);
+            Interaction?.SetSelectHandler(SelectFromWorker);
             EnsureEditorCamera();
             Interaction?.SetGizmoTarget(Selected);
         }
@@ -196,7 +201,9 @@ namespace V12Studio.Core
             sun.AddComponent(new GenericLightComponent
             {
                 Type = LightType.Directional,
-                ColorR = 1f, ColorG = 0.97f, ColorB = 0.92f,
+                ColorR = 1f,
+                ColorG = 0.97f,
+                ColorB = 0.92f,
                 Energy = 1.2f
             });
             sun.LocalTransform = new TRS
