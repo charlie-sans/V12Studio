@@ -49,6 +49,14 @@ namespace V12Studio.Core
         /// SubViewport. Hosts register the viewport under its Id.</summary>
         public IWorldElement? ViewportElement { get; private set; }
 
+        /// <summary>Raised when <see cref="ViewportElement"/> is replaced by a
+        /// different element. Scene loads wipe the scene world's roots —
+        /// including the old viewport element — so the id changes and the host
+        /// must re-register its SubViewport under the new one; otherwise the
+        /// renderer never reparents scene nodes into the SubViewport (grey game
+        /// view, no camera, picking fails).</summary>
+        public event Action? ViewportElementChanged;
+
         public ConsoleLog Log { get; } = new();
 
         /// <summary>Viewport interaction service, registered by the host after
@@ -305,6 +313,7 @@ namespace V12Studio.Core
         {
             if (SceneWorld == null) return;
 
+            var previous = ViewportElement;
             var existing = SceneWorld.Root
                 .FirstOrDefault(e => e.GetComponent<ViewportComponent>() is { RenderWorld: true });
             if (existing != null)
@@ -312,15 +321,19 @@ namespace V12Studio.Core
                 if (existing.GetComponent<EditorOnlyComponent>() == null)
                     existing.AddComponent(new EditorOnlyComponent());
                 ViewportElement = existing;
-                return;
+            }
+            else
+            {
+                var vp = new Element("EditorViewport");
+                vp.AddComponent(new ViewportComponent { RenderWorld = true });
+                vp.AddComponent(new EditorOnlyComponent()); // editor plumbing: hidden from the hierarchy
+                SceneWorld.AddElement(vp);
+                ViewportElement = vp;
+                Log.Info($"Editor viewport element created (id {vp.Id}).");
             }
 
-            var vp = new Element("EditorViewport");
-            vp.AddComponent(new ViewportComponent { RenderWorld = true });
-            vp.AddComponent(new EditorOnlyComponent()); // editor plumbing: hidden from the hierarchy
-            SceneWorld.AddElement(vp);
-            ViewportElement = vp;
-            Log.Info($"Editor viewport element created (id {vp.Id}).");
+            if (!ReferenceEquals(previous, ViewportElement))
+                ViewportElementChanged?.Invoke();
         }
 
         /// <summary>Resolve a possibly-relative path against the project

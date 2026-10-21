@@ -94,7 +94,7 @@ namespace V12Studio.Editor
                 box.AddChild(row);
 
                 var fields = _ui.CreateVBox();
-                var adapter = new StudioInspectorAdapter(_ui, fields);
+                var adapter = new StudioInspectorAdapter(_ui, fields, _shell.ProjectDir);
                 bool hasInspectorContent;
 
                 if (component is TransformComponent)

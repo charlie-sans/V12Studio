@@ -55,6 +55,7 @@ namespace V12Studio.Editor
                     RefreshLoaded();
                 }
             }));
+            actions.AddChild(_ui.CreateButton("Build Gamepak", BuildGamepak));
 
             var box = _ui.CreateVBox();
             box.AddChild(top);
@@ -85,6 +86,20 @@ namespace V12Studio.Editor
                 _shell.Session.Log.Info($"Found {packs.Count} pack(s) in '{dir}'.");
 
             RefreshLoaded();
+        }
+
+        /// <summary>Build the open project into a .v12pak with the V12 SDK and,
+        /// on success, point the browser at the output folder so the fresh pak
+        /// is listed and ready to load.</summary>
+        private void BuildGamepak()
+        {
+            var result = _shell.BuildGamepak();
+            _detail.Text = result.Message;
+            if (!result.Success) return;
+
+            var dir = Path.GetDirectoryName(result.OutputPath);
+            if (!string.IsNullOrEmpty(dir)) _dir.Text = dir;
+            Rescan();
         }
 
         private void RefreshLoaded()

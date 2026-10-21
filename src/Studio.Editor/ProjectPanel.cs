@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using V12.UI;
 using V12Studio.Core;
@@ -102,10 +101,8 @@ namespace V12Studio.Editor
 
         private void Browse()
         {
-            _ui.CreateFilePicker().ShowOpen("Pick any file in the project", "Any file", Array.Empty<string>(), path =>
+            _ui.CreateFilePicker().ShowFolder("Select the project folder", dir =>
             {
-                if (path == null) return;
-                var dir = Path.GetDirectoryName(path);
                 if (string.IsNullOrEmpty(dir)) return;
                 _path.Text = dir;
                 Rescan();

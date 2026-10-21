@@ -29,6 +29,9 @@ namespace V12Studio.Editor
 
         public IPanel Panel { get; }
 
+        /// <summary>Test hook: the hierarchy tree widget, for input probes.</summary>
+        public ITreeView Tree => _tree;
+
         /// <summary>Raised when the user picks "Add Component" for an element.</summary>
         public event Action<IWorldElement>? AddComponentRequested;
 
@@ -151,11 +154,45 @@ namespace V12Studio.Editor
             }
         }
 
-        private void OnItemDropped(ITreeItem dragged, ITreeItem target)
+        private void OnItemDropped(ITreeItem dragged, ITreeItem? target, TreeDropPosition position)
         {
             if (dragged.UserData is not IWorldElement el) return;
-            if (target.UserData is not IWorldElement newParent) return;
-            _ops.Reparent(el, newParent, out _);
+
+            // Capture scene data now. The reparent triggers a tree rebuild that
+            // frees every TreeItem, so we must not do it inside Godot's
+            // _DropData (Tree still holds drop-state refs to those items).
+            // Dispatch defers to the next idle frame; fall back to direct.
+            IWorldElement? targetEl = null;
+            if (target != null && position != TreeDropPosition.Root)
+            {
+                targetEl = target.UserData as IWorldElement;
+                if (targetEl == null) return;
+                if (ReferenceEquals(el, targetEl)) return; // dropping on itself: no-op
+            }
+
+            void Apply()
+            {
+                // Dropped on empty space: unparent to the world root.
+                if (targetEl == null)
+                {
+                    _ops.Reparent(el, null, out _);
+                    return;
+                }
+
+                // Before/After: place el as a sibling next to the target. Child:
+                // make el a child of the target (append).
+                string err;
+                bool applied;
+                if (position == TreeDropPosition.Before || position == TreeDropPosition.After)
+                    applied = _ops.Reparent(el, targetEl.Parent, out err, targetEl, position);
+                else
+                    applied = _ops.Reparent(el, targetEl, out err);
+                if (!applied)
+                    _session.Log.Warn($"Reparent '{el.Name}' failed: {err}");
+            }
+
+            var dispatch = _session.Dispatch;
+            if (dispatch != null) dispatch(Apply); else Apply();
         }
 
         private IContextMenu? OnContextMenuRequested(ITreeItem item)

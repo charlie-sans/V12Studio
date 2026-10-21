@@ -27,6 +27,7 @@ namespace V12Studio.Godot
         private GodotViewportAdapter? _viewportAdapter;
         private V12TwoDog.Renderer? _renderer;
         private long _viewportElementId;
+        private SubViewport? _sceneSub;
         private Window? _editorWindow;
         private StudioSession? _session;
         /// <summary>Debug aid: --screenshot=path.png captures the editor window
@@ -47,38 +48,55 @@ namespace V12Studio.Godot
         private string? _newProjectPath;
         private bool _probePick;
         private bool _probeGizmoScale;
+        private bool _probeDrag;
+        private bool _probeInput;
+        private bool _probeTreeDrag;
+        private bool _probeShared;
+        private StudioShell? _shell;
         private int _frameCount;
 
         public override void _Ready()
         {
-       
-            foreach (var arg in OS.GetCmdlineUserArgs())
+
+            // Args can arrive two ways in Godot: engine-level args (what the
+            // exported exe is handed, e.g. `V12Studio.exe --project=...`) show
+            // up in GetCmdlineArgs(), while only args after a `--` separator
+            // land in GetCmdlineUserArgs(). Read both.
+            var args = OS.GetCmdlineArgs().Concat(OS.GetCmdlineUserArgs()).ToArray();
+
+            // Value options accept both `--name=value` and `--name value`. The
+            // spaced form is easy to type by accident and used to be dropped
+            // silently, so every flag below understands both spellings.
+            string? Option(string name)
             {
-                if (arg.StartsWith("--screenshot=", StringComparison.OrdinalIgnoreCase))
-                    _screenshotPath = arg.Substring("--screenshot=".Length);
-                else if (arg.StartsWith("--layout-dump=", StringComparison.OrdinalIgnoreCase))
-                    _layoutDumpPath = arg.Substring("--layout-dump=".Length);
-                else if (arg.StartsWith("--select=", StringComparison.OrdinalIgnoreCase))
-                    _selectName = arg.Substring("--select=".Length);
-                else if (arg.StartsWith("--new-component-form=", StringComparison.OrdinalIgnoreCase))
-                    _formName = arg.Substring("--new-component-form=".Length);
-                else if (arg.StartsWith("--add-component-menu=", StringComparison.OrdinalIgnoreCase))
-                    _menuName = arg.Substring("--add-component-menu=".Length);
-                else if (arg.StartsWith("--save-scene=", StringComparison.OrdinalIgnoreCase))
-                    _saveScenePath = arg.Substring("--save-scene=".Length);
-                else if (arg.StartsWith("--load-scene=", StringComparison.OrdinalIgnoreCase))
-                    _loadScenePath = arg.Substring("--load-scene=".Length);
-                else if (arg.StartsWith("--project=", StringComparison.OrdinalIgnoreCase))
-                    _projectPath = arg.Substring("--project=".Length);
-                else if (arg.StartsWith("--new-project=", StringComparison.OrdinalIgnoreCase))
-                    _newProjectTemplate = arg.Substring("--new-project=".Length);
-                else if (arg.StartsWith("--new-project-path=", StringComparison.OrdinalIgnoreCase))
-                    _newProjectPath = arg.Substring("--new-project-path=".Length);
-                else if (arg.Equals("--probe-pick", StringComparison.OrdinalIgnoreCase))
-                    _probePick = true;
-                else if (arg.Equals("--probe-gizmo-scale", StringComparison.OrdinalIgnoreCase))
-                    _probeGizmoScale = true;
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i].StartsWith(name + "=", StringComparison.OrdinalIgnoreCase))
+                        return args[i].Substring(name.Length + 1);
+                    if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase))
+                        return i + 1 < args.Length ? args[i + 1] : null;
+                }
+                return null;
             }
+            bool Flag(string name) =>
+                args.Any(a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            _screenshotPath = Option("--screenshot");
+            _layoutDumpPath = Option("--layout-dump");
+            _selectName = Option("--select");
+            _formName = Option("--new-component-form");
+            _menuName = Option("--add-component-menu");
+            _saveScenePath = Option("--save-scene");
+            _loadScenePath = Option("--load-scene");
+            _projectPath = Option("--project");
+            _newProjectTemplate = Option("--new-project");
+            _newProjectPath = Option("--new-project-path");
+            _probePick = Flag("--probe-pick");
+            _probeGizmoScale = Flag("--probe-gizmo-scale");
+            _probeDrag = Flag("--probe-drag");
+            _probeInput = Flag("--probe-input");
+            _probeTreeDrag = Flag("--probe-tree-drag");
+            _probeShared = Flag("--probe-shared");
 
             var options = new V12RuntimeOptions
             {
@@ -125,7 +143,16 @@ namespace V12Studio.Godot
             };
             var subContainer = new SubViewportContainer { Stretch = true };
             subContainer.AddChild(sub);
+            _sceneSub = sub;
             _renderer.RegisterSceneViewport(vpElement.Id, sub);
+
+            // Loading a scene wipes the scene world's roots — including the
+            // EditorViewport element — and EnsureViewportElement creates a NEW
+            // one with a new id. Re-bind the SubViewport to that id or the
+            // renderer never reparents scene nodes into it: the game view goes
+            // grey with no camera (and picking reports "ray failed").
+            session.ViewportElementChanged += () =>
+                Callable.From(RebindSceneViewport).CallDeferred();
 
             // Editor window: the Godot MAIN window. Keeping the UI in the main
             // window means input events, focus and mouse coordinates are the
@@ -134,7 +161,8 @@ namespace V12Studio.Godot
             _ui = new GodotUIProvider(GetWindow());
             var window = (Window)_ui.RootWindow.NativeControl;
             window.Title = "V12 Studio";
-            window.Theme = GodotStudioTheme.Create();
+            StudioThemeManager.Load();        // restores saved palette (safe to call more than once)
+            StudioThemeManager.Bind(window);  // sets window.Theme now + on every palette change
             _editorWindow = window;
 
             // Game-view panel: hosts the SubViewport inside the panel's own
@@ -153,9 +181,46 @@ namespace V12Studio.Godot
             // runs, so the UI container must enter the tree deferred.
             window.CallDeferred(Node.MethodName.AddChild, containerControl);
 
-            var shell = new StudioShell(_ui, session, ProjectSettings.GlobalizePath("res://"));
-            if (!string.IsNullOrEmpty(_projectPath) && Directory.Exists(_projectPath))
-                session.ProjectDir = _projectPath;
+            // Resolve the project folder before the shell is built. StudioShell
+            // captures its ProjectDir for the Project panel, status bar, asset
+            // scanner and default save path, so it must be handed the requested
+            // project here — patching the session afterwards would leave all of
+            // that pointing at the export directory (res://).
+            string? projectDir = null;
+            if (!string.IsNullOrEmpty(_projectPath))
+            {
+                if (Directory.Exists(_projectPath))
+                {
+                    projectDir = Path.GetFullPath(_projectPath);
+                }
+                else
+                {
+                    // Fail loudly instead of silently falling back to res://:
+                    // a mistyped --project used to look like "the arg is ignored".
+                    GD.PrintErr($"[StudioHost] --project: no such directory '{_projectPath}'; " +
+                        "falling back to the export directory.");
+                }
+            }
+            projectDir ??= ProjectSettings.GlobalizePath("res://");
+            GD.Print($"[StudioHost] project directory: '{projectDir}'");
+
+            // Pack-root asset resolution: mount the project directory as the
+            // default v12:// mount so v12://textures/crate.png (and the
+            // folder-named form v12://<ProjectName>/…) resolve from the pack
+            // root at render time. First mount becomes the resolver default.
+            if (_runtime.Root.Registry.Get<V12.Core.Interfaces.IAssetResolver>()
+                    is not V12.Core.V12AssetResolver assetResolver)
+            {
+                assetResolver = new V12.Core.V12AssetResolver();
+                _runtime.Root.Registry.Register("AssetResolver", assetResolver);
+            }
+            var packMount = Path.GetFileName(projectDir.TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrEmpty(packMount)) packMount = "project";
+            assetResolver.Mount(packMount, projectDir);
+
+            var shell = new StudioShell(_ui, session, projectDir);
+            _shell = shell;
             var root = shell.Build(container, gameViewPanel);
             if (root.NativeControl is Control rootControl)
                 GrowAll(rootControl);
@@ -200,7 +265,7 @@ namespace V12Studio.Godot
             _viewportAdapter?.ApplyEditorDrivenTransforms();
             _ui?.ProcessFrame(delta);
 
-            if (_screenshotPath != null || _probePick || _probeGizmoScale)
+            if (_screenshotPath != null || _probePick || _probeGizmoScale || _probeDrag || _probeInput || _probeTreeDrag || _probeShared)
             {
                 _frameCount++;
                 // Gizmo constant-screen-size diagnosis: select, log, teleport the
@@ -212,7 +277,48 @@ namespace V12Studio.Godot
                         _viewportAdapter, _viewportElementId);
                 }
 
-                int quitAt = _probeGizmoScale ? 150 : 120;
+                if (_probeInput && _editorWindow != null && GodotObject.IsInstanceValid(_editorWindow))
+                {
+                    if (_frameCount == 60)
+                        InputProbeNode.Push(_editorWindow, new Vector2(400, 400));
+                    else if (_frameCount == 63)
+                        InputProbeNode.Report();
+                }
+
+                if (_probeShared && _editorWindow != null && GodotObject.IsInstanceValid(_editorWindow))
+                {
+                    if (_frameCount == 60)
+                        SharedDispatchProbe.Start(_editorWindow);
+                    else if (_frameCount == 62)
+                        SharedDispatchProbe.Push(_editorWindow, new Vector2(400, 400));
+                    else if (_frameCount == 66)
+                        SharedDispatchProbe.Report();
+                }
+
+                // Drag probe is frame-driven: it dispatches one event per frame
+                // (PushInput delivers on the following frame) and reports quit
+                // when the last scenario settles. Needs a warm-up frame so the
+                // shell layout has real item rects first.
+                if (_probeDrag && _frameCount > 60 && _session != null && _editorWindow != null
+                    && GodotObject.IsInstanceValid(_editorWindow))
+                {
+                    if (DragProbe.Tick(_shell!, _session))
+                    {
+                        GetTree().Quit();
+                        return;
+                    }
+                }
+
+                if (_probeTreeDrag && _editorWindow != null && GodotObject.IsInstanceValid(_editorWindow))
+                {
+                    if (TreeDragIsolation.Tick(_editorWindow, _frameCount))
+                    {
+                        GetTree().Quit();
+                        return;
+                    }
+                }
+
+                int quitAt = _probeGizmoScale ? 150 : _probeInput ? 66 : _probeShared ? 68 : _probeDrag || _probeTreeDrag ? 100000 : 120;
                 if (_frameCount >= quitAt && _editorWindow != null
                     && GodotObject.IsInstanceValid(_editorWindow))
                 {
@@ -266,6 +372,28 @@ namespace V12Studio.Godot
                 _runtime?.Shutdown();
                 _runtime = null;
             }
+        }
+
+        /// <summary>Re-register the game-view SubViewport under the session's
+        /// current viewport element id (raised via CallDeferred so any thread
+        /// that swapped the element ends up on the main thread). Unregisters
+        /// the stale id so the adapter, picking and the renderer's reparent
+        /// pass all agree on one registration.</summary>
+        private void RebindSceneViewport()
+        {
+            if (_sceneSub == null || !GodotObject.IsInstanceValid(_sceneSub)) return;
+            if (_renderer == null || _session == null) return;
+
+            var newId = _session.ViewportElement?.Id ?? 0;
+            if (newId == _viewportElementId) return;
+
+            var oldId = _viewportElementId;
+            if (oldId != 0)
+                _renderer.UnregisterSceneViewport(oldId);
+            _viewportElementId = newId;
+            if (newId != 0)
+                _renderer.RegisterSceneViewport(newId, _sceneSub);
+            GD.Print($"[StudioHost] Scene viewport re-bound: {oldId} -> {newId}");
         }
 
         /// <summary>Debug aid: print where scene nodes ended up relative to the

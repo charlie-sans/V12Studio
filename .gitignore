@@ -6,6 +6,7 @@
 [Dd]ebug/
 [Rr]elease/
 x64/
+.godot
 x86/
 *.dll
 *.DLL

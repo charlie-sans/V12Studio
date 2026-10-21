@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using V12.Core.UI;
 using V12.UI;
 
@@ -10,11 +11,13 @@ namespace V12Studio.Editor
     {
         private readonly IUIProvider _ui;
         private readonly IVBox _root;
+        private readonly string? _projectDir;
 
-        public StudioInspectorAdapter(IUIProvider ui, IVBox root)
+        public StudioInspectorAdapter(IUIProvider ui, IVBox root, string? projectDir = null)
         {
             _ui = ui;
             _root = root;
+            _projectDir = projectDir;
         }
 
         public int ControlCount { get; private set; }
@@ -60,6 +63,54 @@ namespace V12Studio.Editor
             field.SetOnChanged(setter);
             row.AddChild(field);
             Add(row);
+        }
+
+        public void AssetPath(string label, Func<string> getter, Action<string> setter, string[]? extensions = null)
+        {
+            var row = LabelRow(label);
+            var field = _ui.CreateTextField("path or v12://…", _ => { });
+            field.Text = getter() ?? "";
+            field.SetOnChanged(setter);
+            row.AddChild(field);
+
+            var browse = _ui.CreateButton("…", () =>
+            {
+                _ui.CreateFilePicker().ShowOpen(
+                    $"Select {label}", "Asset file", extensions ?? System.Array.Empty<string>(), picked =>
+                    {
+                        if (string.IsNullOrEmpty(picked)) return;
+                        var value = ToProjectUri(picked);
+                        field.Text = value;
+                        setter(value);
+                    });
+            });
+            row.AddChild(browse);
+            Add(row);
+        }
+
+        /// <summary>Convert an absolute picked path to a v12:// URI relative
+        /// to the project root when it lives inside the project; otherwise
+        /// return the absolute path unchanged.</summary>
+        private string ToProjectUri(string fullPath)
+        {
+            if (string.IsNullOrEmpty(_projectDir)) return fullPath;
+            try
+            {
+                var root = Path.GetFullPath(_projectDir)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var full = Path.GetFullPath(fullPath);
+                if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    && !full.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    return fullPath;
+                var rel = full.Substring(root.Length)
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    .Replace('\\', '/');
+                return "v12://" + rel;
+            }
+            catch
+            {
+                return fullPath;
+            }
         }
 
         public void Enum<T>(string label, Func<T> getter, Action<T> setter) where T : struct, Enum

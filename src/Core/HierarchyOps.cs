@@ -5,6 +5,7 @@ using System.Numerics;
 using V12.Core;
 using V12.Core.Core.Interfaces;
 using V12.Core.Interfaces.Renderer;
+using V12.UI;
 using V12.WorldML;
 using MeshShape = V12.Components.MeshShape;
 
@@ -118,37 +119,85 @@ namespace V12Studio.Core
         /// (null = move to the world root). Refuses self-parenting and
         /// descendants of <paramref name="el"/> (cycle guard). Local transform
         /// is preserved as-is (it becomes relative to the new parent).
+        ///
+        /// Ordering: pass <paramref name="position"/> (Before/After a sibling)
+        /// to place <paramref name="el"/> next to <paramref name="sibling"/>;
+        /// null position appends to the end. Reordering within the same parent
+        /// is allowed.
         /// </summary>
-        public bool Reparent(IWorldElement el, IWorldElement? newParent, out string error)
+        public bool Reparent(IWorldElement el, IWorldElement? newParent, out string error,
+                             IWorldElement? sibling = null, TreeDropPosition position = TreeDropPosition.Child)
         {
             error = "";
             if (!_session.IsSceneElement(el)) { error = "Only scene elements can be reparented."; return false; }
             if (ReferenceEquals(el, newParent)) { error = "Cannot parent an element to itself."; return false; }
             if (newParent != null && IsDescendantOf(newParent, el)) { error = "Cannot parent an element to its own child."; return false; }
+            if (sibling != null && IsDescendantOf(sibling, el)) { error = "Cannot place an element beside its own child."; return false; }
 
             var oldParent = el.Parent;
-            if (ReferenceEquals(oldParent, newParent)) return true;
+            bool ordering = position == TreeDropPosition.Before || position == TreeDropPosition.After;
+
+            // Pure move to the current parent is a no-op; same-parent reorder
+            // (Before/After with a sibling) is a legit case, so only skip when
+            // there's no ordering intent.
+            if (!ordering && ReferenceEquals(oldParent, newParent)) return true;
+
+            // Detach first.
+            if (oldParent != null)
+                oldParent.RemoveChild(el);
+            else
+                _session.SceneWorld?.RemoveElement(el);
 
             if (newParent == null)
             {
-                if (oldParent != null)
-                {
-                    oldParent.RemoveChild(el);
-                    _session.SceneWorld?.AddElement(el);
-                }
+                _session.SceneWorld?.AddElement(el);
+                if (ordering)
+                    MoveWithin(_session.SceneWorld!.Root, el, sibling, position);
             }
             else
             {
-                if (oldParent != null)
-                    oldParent.RemoveChild(el);
+                if (ordering)
+                {
+                    // AddChild appends; slide el into place next to the sibling.
+                    newParent.AddChild(el);
+                    MoveWithin(newParent.Children, el, sibling, position);
+                }
                 else
-                    _session.SceneWorld?.RemoveElement(el);
-                newParent.AddChild(el);
+                {
+                    newParent.AddChild(el); // Child: append to the end
+                }
             }
 
             _session.NotifyHierarchyChanged();
-            _session.Log.Info($"Reparented '{el.Name}' under '{newParent?.Name ?? "World"}'.");
+            var where = position == TreeDropPosition.Before ? "before"
+                : position == TreeDropPosition.After ? "after"
+                : "under";
+            var detail = (position == TreeDropPosition.Before || position == TreeDropPosition.After) && sibling != null
+                ? $" {where} '{sibling.Name}'"
+                : $" under '{newParent?.Name ?? "World"}'";
+            _session.Log.Info($"Reparented '{el.Name}'{detail}.");
             return true;
+        }
+
+        /// <summary>Slide <paramref name="el"/> (already a member of
+        /// <paramref name="siblings"/>) to sit immediately before or after
+        /// <paramref name="sibling"/>. Falls back to append when the sibling
+        /// isn't found. Runs under the world write lock — the renderer iterates
+        /// these lists under the matching read lock.</summary>
+        private void MoveWithin(List<IWorldElement> siblings, IWorldElement el,
+                                IWorldElement? sibling, TreeDropPosition position)
+        {
+            var world = _session.SceneWorld;
+            world?.Lock.EnterWriteLock();
+            try
+            {
+                siblings.Remove(el);
+                if (sibling == null) { siblings.Add(el); return; }
+                var idx = siblings.IndexOf(sibling);
+                if (idx < 0) { siblings.Add(el); return; }
+                siblings.Insert(position == TreeDropPosition.Before ? idx : idx + 1, el);
+            }
+            finally { world?.Lock.ExitWriteLock(); }
         }
 
         /// <summary>Wrap <paramref name="elements"/> in a new "Group" element

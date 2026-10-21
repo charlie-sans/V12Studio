@@ -20,6 +20,7 @@ namespace V12Studio.Editor
         public ComponentCreator Creator { get; }
         public ProjectScanner Scanner { get; } = new();
         public PackService Packs { get; }
+        public GamepackBuilder Builder { get; }
 
         /// <summary>Root directory the Project tab scans and new scripts resolve under.</summary>
         public string ProjectDir { get; }
@@ -30,6 +31,10 @@ namespace V12Studio.Editor
         /// <summary>The Inspector panel. Hosts use it for debug drives
         /// (opening a specific view behind a layout-dump flag).</summary>
         public InspectorPanel Inspector => _inspector;
+
+        /// <summary>The Hierarchy panel. Hosts use it for debug drives
+        /// (input probes).</summary>
+        public HierarchyPanel Hierarchy => _hierarchy;
         private ILabel _sceneLabel = null!;
         private ILabel _selectionLabel = null!;
 
@@ -40,6 +45,7 @@ namespace V12Studio.Editor
             Ops = new HierarchyOps(session);
             Creator = new ComponentCreator(session);
             Packs = new PackService(session.Root, session);
+            Builder = new GamepackBuilder(session);
             ProjectDir = string.IsNullOrWhiteSpace(projectDir)
                 ? AppContext.BaseDirectory
                 : Path.GetFullPath(projectDir);
@@ -125,8 +131,7 @@ namespace V12Studio.Editor
 
             bar.AddItem(UI.CreateButton("Project", () =>
             {
-                var fp = UI.CreateFilePicker();
-                fp.ShowOpen("Select Project Folder", "", new string[] { }, path =>
+                picker.ShowFolder("Select Project Folder", path =>
                 {
                     if (path != null && Directory.Exists(path))
                     {
@@ -136,6 +141,8 @@ namespace V12Studio.Editor
                     }
                 });
             }));
+
+            bar.AddItem(UI.CreateButton("Build", () => BuildGamepak()));
 
             IDropdown add = null!;
             add = UI.CreateDropdown(new[]
@@ -211,6 +218,13 @@ namespace V12Studio.Editor
             };
             return row;
         }
+
+        /// <summary>
+        /// Build the open project into a .v12pak gamepak with the V12 SDK.
+        /// Returns the outcome; progress and failures land in the console log.
+        /// </summary>
+        public GamepackBuildResult BuildGamepak(string? outputPath = null)
+            => Builder.Build(Session.ProjectDir ?? ProjectDir, outputPath);
 
         /// <summary>Friendly project name: the project folder's name.</summary>
         private string ProjectName()
