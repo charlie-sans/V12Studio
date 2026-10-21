@@ -140,7 +140,9 @@ namespace V12Studio.Editor
 
         public void Section(string title)
         {
-            Add(_ui.CreateLabel(title));
+            var label = _ui.CreateLabel(title);
+            _ui.ApplyVariation(label, "SectionLabel");
+            Add(label);
         }
 
         public void Separator()

@@ -27,6 +27,12 @@ namespace V12Studio.Editor
         private IButton? _addComponentButton;
         private bool _showingForm;
 
+        // Foldout memory: component kind -> collapsed, session-scoped. Keyed
+        // by friendly type name so every Material block shares one state, the
+        // way an editor foldout remembers a section across selections.
+        private readonly System.Collections.Generic.Dictionary<string, bool> _collapsed =
+            new(StringComparer.Ordinal);
+
         public IPanel Panel { get; }
 
         public InspectorPanel(StudioShell shell)
@@ -37,6 +43,11 @@ namespace V12Studio.Editor
 
             Panel = _ui.CreatePanel("Inspector");
             Panel.UseScrollableContent = true;
+            // Width floor: the widest standard row (transform = 130px label +
+            // three number fields) measures ~347px plus panel padding. Without
+            // a floor the ratio split squeezes this pane (15% ≈ 215px at
+            // 1920) and the component Remove buttons land off-screen.
+            Panel.MinWidth = 360f;
             ShowMain();
             // A selection change while the New Component form is open cancels
             // the form — the inspector always tracks the current selection.
@@ -75,25 +86,48 @@ namespace V12Studio.Editor
             TransformRow(box, "Scale", TransformEdit.ScaleOf(sel),
                 (el, x, y, z) => TransformEdit.SetScale(el, x, y, z), "F2");
 
-            box.AddChild(_ui.CreateLabel("Components"));
+            var componentsHead = _ui.CreateLabel("Components");
+            _ui.ApplyVariation(componentsHead, "GroupLabel");
+            box.AddChild(componentsHead);
+
             foreach (var component in sel.Components.ToList())
             {
                 // Internal persistence marker (e.g. on the editor camera):
                 // plumbing, not an authored component.
                 if (component is NonPersistentComponent) continue;
 
-                var row = _ui.CreateHBox();
-                row.AddChild(InspectorLayout.RowLabel(_ui, FriendlyName(component)));
+                var kind = FriendlyName(component);
+                var collapsed = IsCollapsed(kind);
+
+                var card = _ui.CreatePanel($"component-{kind}");
+                _ui.ApplyVariation(card, "ComponentCard");
+
+                var header = _ui.CreateHBox();
+                var fields = _ui.CreateVBox();
+                fields.Visible = !collapsed;
+
+                IButton toggle = null!;
+                toggle = _ui.CreateButton(HeaderText(kind, collapsed), () =>
+                {
+                    var next = !IsCollapsed(kind);
+                    _collapsed[kind] = next;
+                    toggle.Text = HeaderText(kind, next);
+                    fields.Visible = !next;
+                });
+                _ui.ApplyVariation(toggle, "ComponentHeader");
+
                 var remove = _ui.CreateButton("Remove", () =>
                 {
                     sel.RemoveComponent(component);
                     _session.NotifyHierarchyChanged();
                     ShowMain();
                 });
-                row.AddChild(remove);
-                box.AddChild(row);
+                _ui.ApplyVariation(remove, "DangerButton");
 
-                var fields = _ui.CreateVBox();
+                header.AddChild(toggle, expand: true);
+                header.AddChild(remove);
+                card.AddChild(header);
+
                 var adapter = new StudioInspectorAdapter(_ui, fields, _shell.ProjectDir);
                 bool hasInspectorContent;
 
@@ -142,7 +176,8 @@ namespace V12Studio.Editor
                 }
 
                 if (hasInspectorContent)
-                    box.AddChild(fields);
+                    card.AddChild(fields);
+                box.AddChild(card);
             }
 
             var add = _ui.CreateButton("Add Component…", () => ShowAddComponentMenu(sel));
@@ -409,6 +444,12 @@ namespace V12Studio.Editor
                 ? name.Substring(0, name.Length - "Component".Length)
                 : name;
         }
+
+        private bool IsCollapsed(string kind)
+            => _collapsed.TryGetValue(kind, out var collapsed) && collapsed;
+
+        private static string HeaderText(string kind, bool collapsed)
+            => $"{(collapsed ? "▸" : "▾")} {kind}";
 
         private void SetContent(IWidget widget)
         {

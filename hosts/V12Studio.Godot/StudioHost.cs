@@ -52,6 +52,7 @@ namespace V12Studio.Godot
         private bool _probeInput;
         private bool _probeTreeDrag;
         private bool _probeShared;
+        private bool _probeInspector;
         private StudioShell? _shell;
         private int _frameCount;
 
@@ -97,6 +98,7 @@ namespace V12Studio.Godot
             _probeInput = Flag("--probe-input");
             _probeTreeDrag = Flag("--probe-tree-drag");
             _probeShared = Flag("--probe-shared");
+            _probeInspector = Flag("--probe-inspector");
 
             var options = new V12RuntimeOptions
             {
@@ -104,11 +106,13 @@ namespace V12Studio.Godot
                 ShowLauncher = false,
                 CreateEmptyWorldIfNoPak = true,
                 // Desktop editor: no XR, no networking, no first-person input,
-                // and the mouse stays visible for the UI.
+                // the mouse stays visible for the UI, and no DebugGameService
+                // Label3D dump floating in the 3D viewport.
                 EnableXR = false,
                 EnableNetworking = false,
                 EnableInput = false,
                 LockMouseOnStart = false,
+                EnableDebugOverlay = false,
             };
             _runtime = V12Runtime.Create(this, options);
             _renderer = _runtime.RendererService as V12TwoDog.Renderer
@@ -265,7 +269,7 @@ namespace V12Studio.Godot
             _viewportAdapter?.ApplyEditorDrivenTransforms();
             _ui?.ProcessFrame(delta);
 
-            if (_screenshotPath != null || _probePick || _probeGizmoScale || _probeDrag || _probeInput || _probeTreeDrag || _probeShared)
+            if (_screenshotPath != null || _probePick || _probeGizmoScale || _probeDrag || _probeInput || _probeTreeDrag || _probeShared || _probeInspector)
             {
                 _frameCount++;
                 // Gizmo constant-screen-size diagnosis: select, log, teleport the
@@ -318,7 +322,19 @@ namespace V12Studio.Godot
                     }
                 }
 
-                int quitAt = _probeGizmoScale ? 150 : _probeInput ? 66 : _probeShared ? 68 : _probeDrag || _probeTreeDrag ? 100000 : 120;
+                // Inspector probe: pure assertions against the real panel
+                // (variations, foldout round-trip, remove) — one shot once the
+                // shell has warmed up.
+                if (_probeInspector && _frameCount > 60 && _session != null && _shell != null)
+                {
+                    if (InspectorProbe.Tick(_shell, _session))
+                    {
+                        GetTree().Quit();
+                        return;
+                    }
+                }
+
+                int quitAt = _probeGizmoScale ? 150 : _probeInput ? 66 : _probeShared ? 68 : _probeDrag || _probeTreeDrag || _probeInspector ? 100000 : 120;
                 if (_frameCount >= quitAt && _editorWindow != null
                     && GodotObject.IsInstanceValid(_editorWindow))
                 {

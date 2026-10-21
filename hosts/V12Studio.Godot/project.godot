@@ -20,6 +20,7 @@ config/features=PackedStringArray("4.7", "C#")
 
 window/size/viewport_width=1600
 window/size/viewport_height=950
+window/size/mode=2
 
 [dotnet]
 
