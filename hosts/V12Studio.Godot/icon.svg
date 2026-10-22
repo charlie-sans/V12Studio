@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Nova logo">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffd9a0" stop-opacity="0.9"/>
+      <stop offset="0.35" stop-color="#ff8a4c" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ff5a2c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="spike" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff4dc"/>
+      <stop offset="1" stop-color="#ffb066"/>
+    </linearGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffe2b0"/>
+    </radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="#0c0e1d"/>
+  <circle cx="128" cy="128" r="118" fill="url(#glow)"/>
+  <circle cx="128" cy="128" r="74" fill="none" stroke="#ff9a5c" stroke-opacity="0.35" stroke-width="2"/>
+  <circle cx="128" cy="128" r="98" fill="none" stroke="#ff9a5c" stroke-opacity="0.15" stroke-width="2" stroke-dasharray="3 9"/>
+  <path d="M128 62 L135 121 L194 128 L135 135 L128 194 L121 135 L62 128 L121 121 Z" fill="#ff9a5c" fill-opacity="0.75" transform="rotate(45 128 128)"/>
+  <path d="M128 26 L140 116 L230 128 L140 140 L128 230 L116 140 L26 128 L116 116 Z" fill="url(#spike)"/>
+  <circle cx="128" cy="128" r="20" fill="url(#core)"/>
+</svg>

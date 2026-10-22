@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<World name="Scene">
+	<Element name="EditorViewport">
+	<Component type="TransformComponent" X="0" Y="0" Z="0" RotationX="0" RotationY="0" RotationZ="0" />
+	<Component type="ViewportComponent" RenderWorld="True" BackgroundColor="#1a1a20" />
+	<Component type="EditorOnlyComponent" />
+	</Element>
+	<Element name="Sun">
+	<Component type="TransformComponent" X="0" Y="8" Z="4" RotationX="-23.038" RotationY="-49.78" RotationZ="-1.876" />
+	<Component type="ScaleComponent" ScaleX="1" ScaleY="1" ScaleZ="1" />
+	<Component type="GenericLightComponent" ColorR="1" ColorG="0.97" ColorB="0.92" Energy="1.2" ShadowEnabled="True" Type="Directional" Range="100" Angle="45" SpotSoftness="0.5" />
+	</Element>
+	<Element name="Ground">
+	<Component type="TransformComponent" X="0" Y="-0.1" Z="0" RotationX="0" RotationY="0" RotationZ="0" />
+	<Component type="MeshComponent" Shape="Box" Width="12" Height="0.2" Depth="12" />
+	<Component type="MeshRenderer" MeshTargetName="Mesh" />
+	<Component type="MaterialComponent" R="0.24" G="0.26" B="0.3" A="1" Metallic="0" Roughness="0.9" Unlit="False" NoDepthTest="False" Uv1OffsetX="0" Uv1OffsetY="0" Uv1ScaleX="1" Uv1ScaleY="1" />
+	</Element>
+	<Element name="RedBox">
+	<Component type="TransformComponent" X="-1.6" Y="0.5" Z="0" RotationX="0" RotationY="0" RotationZ="0" />
+	<Component type="MeshComponent" Shape="Box" Width="0.8" Height="0.8" Depth="0.8" />
+	<Component type="MeshRenderer" MeshTargetName="Mesh" />
+	<Component type="MaterialComponent" AlbedoTexture="v12://addons/rider-plugin/screenshots/Toolbar.png" R="1" G="1" B="1" A="1" Metallic="0.1" Roughness="0.5" Unlit="False" NoDepthTest="False" Uv1OffsetX="0" Uv1OffsetY="0" Uv1ScaleX="1" Uv1ScaleY="1" />
+	</Element>
+	<Element name="BlueSphere">
+	<Component type="TransformComponent" X="0" Y="0.6" Z="0" RotationX="0" RotationY="0" RotationZ="0" />
+	<Component type="MeshComponent" Shape="Sphere" Width="0.6" Height="0.6" Depth="0.6" />
+	<Component type="MeshRenderer" MeshTargetName="Mesh" />
+	<Component type="MaterialComponent" R="0.2" G="0.35" B="0.9" A="1" Metallic="0.1" Roughness="0.5" Unlit="False" NoDepthTest="False" Uv1OffsetX="0" Uv1OffsetY="0" Uv1ScaleX="1" Uv1ScaleY="1" />
+	</Element>
+	<Element name="GreenCapsule">
+	<Component type="TransformComponent" X="1.6" Y="0.7" Z="0" RotationX="0" RotationY="0" RotationZ="0" />
+	<Component type="MeshComponent" Shape="Capsule" Width="0.4" Height="1.2" Depth="0.4" />
+	<Component type="MeshRenderer" MeshTargetName="Mesh" />
+	<Component type="MaterialComponent" R="0.25" G="0.8" B="0.35" A="1" Metallic="0.1" Roughness="0.5" Unlit="False" NoDepthTest="False" Uv1OffsetX="0" Uv1OffsetY="0" Uv1ScaleX="1" Uv1ScaleY="1" />
+	</Element>
+	<Element name="Box">
+	<Component type="TransformComponent" X="0" Y="1.407" Z="0" RotationX="0" RotationY="0" RotationZ="0" />
+	<Component type="MeshComponent" Shape="Box" Width="1" Height="1" Depth="1" />
+	<Component type="MeshRenderer" MeshTargetName="Mesh" />
+	<Component type="MaterialComponent" AlbedoTexture="v12://addons/rider-plugin/screenshots/Toolbar.png" R="0.7" G="0.7" B="0.75" A="1" Metallic="0" Roughness="1" Unlit="False" NoDepthTest="False" Uv1OffsetX="0" Uv1OffsetY="0" Uv1ScaleX="5" Uv1ScaleY="5" />
+	<Component type="ScaleComponent" ScaleX="2.576" ScaleY="1.547" ScaleZ="0.01" />
+	</Element>
+</World>

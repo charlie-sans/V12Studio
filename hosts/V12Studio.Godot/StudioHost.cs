@@ -166,6 +166,7 @@ namespace V12Studio.Godot
             var window = (Window)_ui.RootWindow.NativeControl;
             window.Title = "V12 Studio";
             StudioThemeManager.Load();        // restores saved palette (safe to call more than once)
+            //StudioThemeManager.Set(Palettes.Static);
             StudioThemeManager.Bind(window);  // sets window.Theme now + on every palette change
             _editorWindow = window;
 

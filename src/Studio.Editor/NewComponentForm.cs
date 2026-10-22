@@ -212,9 +212,15 @@ namespace V12Studio.Editor
             else if (key == CustomLabel)
                 _groupEntries = Array.Empty<CatalogEntry>();
             else
+            {
+                // Runtime C# components join their declared category. Compile the
+                // project's scripts once so freshly authored files are listed.
+                _shell.Session.CSharp.Ensure();
                 _groupEntries = ComponentCatalog.BuiltInEntries
                     .Where(e => e.Category == key)
+                    .Concat(ComponentCatalog.DiscoverCSharpComponents().Where(e => e.Category == key))
                     .ToList();
+            }
 
             var names = _groupEntries.Select(ComponentCatalog.EntryDisplayName).ToArray();
             _entry.SetOptions(names.Length > 0 ? names : new[] { NoneLabel });

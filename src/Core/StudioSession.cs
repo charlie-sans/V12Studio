@@ -71,7 +71,11 @@ namespace V12Studio.Core
         public StudioSession(GameRoot root)
         {
             Root = root;
+            CSharp = new CSharpComponentService(this);
         }
+
+        /// <summary>Runtime C# components compiled from the project's <c>scripts</c> folder.</summary>
+        public CSharpComponentService CSharp { get; }
 
         /// <summary>IEditor</summary>
         public StudioSession Session => this;

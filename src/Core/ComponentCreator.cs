@@ -132,10 +132,27 @@ namespace V12Studio.Core
                 return $"Unknown language '{req.Language}'.";
             if (string.Equals(lang.Extension, ".orbt", StringComparison.OrdinalIgnoreCase))
                 return "ObjektRT components are precompiled modules and cannot be created from the editor. Use Contract or Lua.";
-            if (string.Equals(lang.Extension, ".cs", StringComparison.OrdinalIgnoreCase))
-                return null; // C# writes the file but attaches nothing — handled in CreateAndAttach with a notice.
+            if (string.Equals(lang.Extension, ".cs", StringComparison.OrdinalIgnoreCase) && !IsUnderScripts(req))
+                return "C# components must be created under scripts/ — they compile together into one assembly.";
 
             return null;
+        }
+
+        /// <summary>True when the requested path lands in the project's scripts folder.</summary>
+        private bool IsUnderScripts(CreateComponentRequest req)
+        {
+            try
+            {
+                string root = _session.ProjectDir ?? AppDomain.CurrentDomain.BaseDirectory;
+                string scripts = Path.GetFullPath(Path.Combine(root, "scripts"));
+                string full = _session.ResolvePath(req.CreatesPath.Trim());
+                return full.StartsWith(scripts + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(full, scripts, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>Validate attaching an existing discovered script file
@@ -145,6 +162,15 @@ namespace V12Studio.Core
             var entry = req.Builtin!;
             if (!File.Exists(entry.ScriptPath!))
                 return $"Script file not found: {Path.GetFileName(entry.ScriptPath!)}.";
+
+            // C# components attach as real CLR types, not through a ScriptComponent.
+            if (string.Equals(Path.GetExtension(entry.ScriptPath), ".cs", StringComparison.OrdinalIgnoreCase))
+            {
+                string typeName = Path.GetFileNameWithoutExtension(entry.ScriptPath!);
+                if (req.Target!.Components.Any(c => string.Equals(c.GetType().Name, typeName, StringComparison.OrdinalIgnoreCase)))
+                    return $"'{req.Target.Name}' already has a {entry.DisplayName} component.";
+                return null;
+            }
 
             static string Norm(string p)
             {
@@ -180,6 +206,9 @@ namespace V12Studio.Core
         private ComponentCreateResult AttachScript(CreateComponentRequest req)
         {
             var entry = req.Builtin!;
+            if (string.Equals(Path.GetExtension(entry.ScriptPath), ".cs", StringComparison.OrdinalIgnoreCase))
+                return AttachCSharp(req, Path.GetFileNameWithoutExtension(entry.ScriptPath!), entry.ScriptPath!);
+
             try
             {
                 var sc = new ScriptComponent { Source = entry.ScriptPath!, ScriptText = null };
@@ -197,12 +226,43 @@ namespace V12Studio.Core
             }
         }
 
+        /// <summary>
+        /// Compiles the project's C# sources and attaches
+        /// <paramref name="typeName"/>. A compile error keeps the previous
+        /// assembly live and reports the diagnostics instead of failing silently.
+        /// </summary>
+        private ComponentCreateResult AttachCSharp(CreateComponentRequest req, string typeName, string displayPath)
+        {
+            var target = req.Target!;
+            try
+            {
+                if (!_session.CSharp.Attach(target, typeName, out var error))
+                {
+                    var failed = $"{displayPath}: {error}";
+                    _session.Log.Error(failed);
+                    return new ComponentCreateResult(false, failed);
+                }
+
+                var msg = $"Attached {typeName} to '{target.Name}'.";
+                _session.Log.Info(msg);
+                return new ComponentCreateResult(true, msg, true);
+            }
+            catch (Exception ex)
+            {
+                var msg = $"Failed to attach {typeName}: {ex.Message}";
+                _session.Log.Error(msg);
+                return new ComponentCreateResult(false, msg);
+            }
+        }
+
         private ComponentCreateResult AttachBuiltin(CreateComponentRequest req)
         {
             var entry = req.Builtin!;
             try
             {
                 var component = entry.Factory!();
+                if (component == null)
+                    return new ComponentCreateResult(false, $"'{entry.DisplayName}' could not be created.");
                 req.Target!.AddComponent(component);
                 _session.NotifyHierarchyChanged();
                 var msg = $"Added {entry.DisplayName} to '{req.Target.Name}'.";
@@ -248,11 +308,7 @@ namespace V12Studio.Core
                 File.WriteAllText(full, source, new UTF8Encoding(false));
 
                 if (isCSharp)
-                {
-                    var msg = $"Created {rel}. Compile it into a DLL and reference it — V12 does not compile C# at runtime, so nothing was attached.";
-                    _session.Log.Warn(msg);
-                    return new ComponentCreateResult(true, msg); // Success but NOT Attached: the dialog stays to show this.
-                }
+                    return AttachCSharp(req, req.ComponentName, rel);
 
                 var sc = new ScriptComponent { Source = full, ScriptText = null };
                 req.Target!.AddComponent(sc);
@@ -268,6 +324,19 @@ namespace V12Studio.Core
                 return new ComponentCreateResult(false, msg);
             }
         }
+
+        /// <summary>Map a dialog field type to a C# field type; null skips it.</summary>
+        private static string? CSharpFieldType(string type) => (type ?? "").Trim().ToLowerInvariant() switch
+        {
+            "number" or "float" or "double" or "decimal" => "float",
+            "int" or "integer" or "long" => "int",
+            "bool" or "boolean" => "bool",
+            "string" or "text" => "string",
+            "vector2" or "vec2" => "Vector2",
+            "vector3" or "vec3" => "Vector3",
+            "vector4" or "vec4" => "Vector4",
+            _ => null,
+        };
 
         private static string BuildSkeleton(CreateComponentRequest req, string language, string extension, bool isCSharp)
         {
@@ -292,10 +361,22 @@ namespace V12Studio.Core
 
             if (isCSharp)
             {
-                sb.AppendLine($"public class {req.ComponentName}");
+                sb.AppendLine("[ComponentEntry(\"GAMEPLAY\", \"" + req.ComponentName + "\")]");
+                sb.AppendLine($"public sealed class {req.ComponentName} : ScriptableComponent");
                 sb.AppendLine("{");
-                sb.AppendLine("    // Implement V12 script hooks here, compile to a DLL,");
-                sb.AppendLine("    // then attach it through a pak or ScriptComponent source.");
+                foreach (var f in req.Fields)
+                {
+                    var type = CSharpFieldType(f.Type);
+                    if (type == null) continue;
+                    var init = type == "string" && !string.IsNullOrWhiteSpace(f.Default)
+                        ? " = \"" + f.Default.Trim().Replace("\"", "\\\"") + "\";"
+                        : "";
+                    sb.AppendLine($"    public {type} {f.Name}{init}");
+                }
+                sb.AppendLine();
+                sb.AppendLine("    public override void Update(float deltaTime)");
+                sb.AppendLine("    {");
+                sb.AppendLine("    }");
                 sb.AppendLine("}");
             }
             else if (string.Equals(language, "Contract", StringComparison.OrdinalIgnoreCase))

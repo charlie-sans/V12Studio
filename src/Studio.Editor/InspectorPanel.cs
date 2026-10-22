@@ -210,10 +210,16 @@ namespace V12Studio.Editor
         {
             var menu = _ui.CreateContextMenu();
 
+            // Runtime C# components (project scripts + loaded paks) sit in
+            // their declared category next to the built-ins.
+            _shell.Session.CSharp.Ensure();
+            var csharp = ComponentCatalog.DiscoverCSharpComponents();
             foreach (var key in ComponentCatalog.Categories)
             {
                 var entries = ComponentCatalog.BuiltInEntries
-                    .Where(e => e.Category == key).ToList();
+                    .Where(e => e.Category == key)
+                    .Concat(csharp.Where(e => e.Category == key))
+                    .ToList();
                 if (entries.Count == 0) continue;
                 var sub = _ui.CreateContextMenu();
                 foreach (var entry in entries)

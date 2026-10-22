@@ -76,15 +76,19 @@ namespace V12Studio.Core
                 {
                     LoadDlls = true,
                     LoadContractScripts = true,
+                    LoadCSharpScripts = true,
                     AllowedAssetExtensions = null,
                     BlockedAssetKeys = null,
                     AllowWorldLoading = true,
+                    DependencySearchPaths = { Path.GetDirectoryName(Path.GetFullPath(pakPath))! },
                 };
                 var result = V12PakLoader.Load(pakPath, options, _root);
                 _loaded.Add(result);
                 var msg = $"Loaded '{Path.GetFileName(pakPath)}': " +
                           $"{result.Manifest.Worlds.Count} world(s), " +
                           $"{result.Manifest.Assets.Count} asset(s), " +
+                          $"{result.Dependencies.Count} dependency pak(s), " +
+                          $"{result.RegisteredCSharpTypes} C# component(s), " +
                           $"{result.SkippedGamepaks} gamepak(s) skipped, " +
                           $"{result.SkippedAssets} asset(s) skipped.";
                 _session.Log.Info(msg);

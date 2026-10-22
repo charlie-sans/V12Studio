@@ -50,6 +50,7 @@ namespace V12Studio.Editor
                 ? AppContext.BaseDirectory
                 : Path.GetFullPath(projectDir);
             session.ProjectDir = ProjectDir; // scenes + scripts resolve against the project
+            session.CSharp.Ensure();         // compile the project's C# components once at startup
 
             _hierarchy = new HierarchyPanel(this);
             _inspector = new InspectorPanel(this);
@@ -136,6 +137,8 @@ namespace V12Studio.Editor
                     if (path != null && Directory.Exists(path))
                     {
                         Session.ProjectDir = path;
+                        Session.CSharp.Invalidate();
+                        Session.CSharp.Ensure();
                         // The Project panel and other UI will reflect the new project
                         // on the next scene load / Inspector refresh.
                     }
@@ -143,6 +146,8 @@ namespace V12Studio.Editor
             }));
 
             bar.AddItem(UI.CreateButton("Build", () => BuildGamepak()));
+            bar.AddItem(UI.CreateButton("Reload C#", () => ReloadCSharpComponents()));
+            bar.AddItem(UI.CreateButton("Watch C#", () => ToggleWatchCSharp()));
 
             IDropdown add = null!;
             add = UI.CreateDropdown(new[]
@@ -165,7 +170,10 @@ namespace V12Studio.Editor
             });
             add.SelectedIndex = -1;
             bar.AddItem(add);
-
+            var names = UI.PalletNames.ToList();
+            var dd = UI.CreateDropdown(names, i => UI.SetPallet(names[i]));
+            bar.AddItem(dd);
+            
             var dup = UI.CreateButton("Duplicate", () =>
             {
                 if (Session.Selected != null) Ops.Duplicate(Session.Selected, out _);
@@ -231,6 +239,29 @@ namespace V12Studio.Editor
         {
             var trimmed = ProjectDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             return string.IsNullOrEmpty(trimmed) ? ProjectDir : Path.GetFileName(trimmed);
+        }
+
+        private void ReloadCSharpComponents()
+        {
+            var result = Session.CSharp.Reload();
+            if (result == null)
+            {
+                Session.Log.Info("No C# scripts under scripts/ to reload.");
+                return;
+            }
+            if (!result.Success)
+                Session.Log.Error($"C# compile failed:\n{result.ErrorText}");
+            else
+                Session.Log.Info($"Reloaded C# components ({result.Warnings.Count} warning(s)).");
+        }
+
+        private bool _watchingCSharp;
+        private void ToggleWatchCSharp()
+        {
+            if (_watchingCSharp) return;
+            Session.CSharp.StartWatching();
+            _watchingCSharp = true;
+            Session.Log.Info("Watching scripts/ for C# changes (reloads on save).");
         }
     }
 }

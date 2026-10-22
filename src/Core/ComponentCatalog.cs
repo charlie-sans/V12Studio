@@ -3,27 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using V12.Core.Core.Interfaces;
+using System.Reflection;
 using V12.Basic.Components;
-using MeshShape = V12.Components.MeshShape;
-using MeshComponent = V12.Components.MeshComponent;
-using MeshRenderer = V12.Components.Renderables.MeshRenderer;
-using MaterialComponent = V12.Components.MaterialComponent;
-using GenericLightComponent = V12.Components.GenericLightComponent;
+using V12.Bindings;
+using ComponentEntryAttribute = V12.Components.ComponentEntryAttribute;
 using TransformComponent = V12.Components.TransformComponent;
-using ScaleComponent = V12.Components.ScaleComponent;
-using ColliderComponent = V12.Components.ColliderComponent;
-using TagComponent = V12.Components.TagComponent;
-using VelocityComponent = V12.Components.VelocityComponent;
-using AudioSourceComponent = V12.Components.AudioSourceComponent;
-using AudioListenerComponent = V12.Components.AudioListenerComponent;
-using PointLightComponent = V12.Components.PointLightComponent;
-using SpotLightComponent = V12.Components.SpotLightComponent;
-using EnvironmentComponent = V12.Components.EnvironmentComponent;
-using FogComponent = V12.Components.FogComponent;
-using SpawnPointComponent = V12.Components.SpawnPointComponent;
-using ScriptComponent = V12.Components.ScriptComponent;
-using InteractionComponent = V12.Components.InteractionComponent;
-using ParticleEmitterComponent = V12.Components.ParticleEmitterComponent;
 
 namespace V12Studio.Core
 {
@@ -34,7 +18,8 @@ namespace V12Studio.Core
         Type? ComponentType,
         Func<IComponent>? Factory,
         bool SingleInstance,
-        string? ScriptPath = null);
+        string? ScriptPath = null,
+        string? Language = null);
 
     /// <summary>
     /// The component catalogue: engine built-ins plus script files discovered
@@ -61,31 +46,68 @@ namespace V12Studio.Core
 
         public static readonly string YourComponentsCategory = "Your Components";
 
-        private static readonly CatalogEntry[] BuiltIns =
+        // The built-in catalogue is derived by reflection from the
+        // [ComponentEntry] attribute stamped on each component class, so adding
+        // a component to the Add Component menu is just stamping one attribute.
+        // The two anchor types span both engine assemblies that hold components:
+        // 19 live in the V12 assembly (TransformComponent); Camera lives in
+        // V12.Basic.
+        private static readonly Type[] CatalogAnchors =
         {
-            new("TRANSFORM", "Transform", typeof(TransformComponent), () => new TransformComponent(), true),
-            new("TRANSFORM", "Scale", typeof(ScaleComponent), () => new ScaleComponent(), true),
-            new("RENDER", "Mesh", typeof(MeshComponent), () => new MeshComponent(), true),
-            new("RENDER", "Mesh Renderer", typeof(MeshRenderer), () => new MeshRenderer(), true),
-            new("RENDER", "Material", typeof(MaterialComponent), () => new MaterialComponent(), true),
-            new("RENDER", "Camera", typeof(CameraComponent), () => new CameraComponent(), true),
-            new("LIGHTING", "Directional Light", typeof(GenericLightComponent), () => new GenericLightComponent(), true),
-            new("LIGHTING", "Point Light", typeof(PointLightComponent), () => new PointLightComponent(), true),
-            new("LIGHTING", "Spot Light", typeof(SpotLightComponent), () => new SpotLightComponent(), true),
-            new("LIGHTING", "Environment", typeof(EnvironmentComponent), () => new EnvironmentComponent(), true),
-            new("LIGHTING", "Fog", typeof(FogComponent), () => new FogComponent(), true),
-            new("PHYSICS", "Collider", typeof(ColliderComponent), () => new ColliderComponent(), true),
-            new("PHYSICS", "Velocity", typeof(VelocityComponent), () => new VelocityComponent(), true),
-            new("AUDIO", "Audio Source", typeof(AudioSourceComponent), () => new AudioSourceComponent(), false),
-            new("AUDIO", "Audio Listener", typeof(AudioListenerComponent), () => new AudioListenerComponent(), true),
-            new("GAMEPLAY", "Tag", typeof(TagComponent), () => new TagComponent(), true),
-            new("GAMEPLAY", "Script", typeof(ScriptComponent), () => new ScriptComponent(), true),
-            new("GAMEPLAY", "Spawn Point", typeof(SpawnPointComponent), () => new SpawnPointComponent(), true),
-            new("GAMEPLAY", "Interaction", typeof(InteractionComponent), () => new InteractionComponent(), true),
-            new("GAMEPLAY", "Particle Emitter", typeof(ParticleEmitterComponent), () => new ParticleEmitterComponent(), false),
+            typeof(TransformComponent),
+            typeof(CameraComponent),
         };
 
-        public static IReadOnlyList<CatalogEntry> BuiltInEntries => BuiltIns;
+        private static readonly IReadOnlyList<CatalogEntry> BuiltInEntriesCache = BuildBuiltIns();
+
+        private static IReadOnlyList<CatalogEntry> BuildBuiltIns()
+        {
+            var seen = new HashSet<Type>();
+            var found = new List<(CatalogEntry Entry, int SortOrder)>();
+            foreach (var anchor in CatalogAnchors)
+            {
+                Type[] types;
+                try { types = anchor.Assembly.GetTypes(); }
+                catch (ReflectionTypeLoadException ex) { types = ex.Types.Where(t => t != null).ToArray(); }
+                foreach (var type in types)
+                {
+                    if (!seen.Add(type)) continue;
+                    if (type.IsAbstract || type.IsInterface) continue;
+                    if (!typeof(IComponent).IsAssignableFrom(type)) continue;
+                    var attr = type.GetCustomAttribute<ComponentEntryAttribute>();
+                    if (attr == null) continue;
+                    found.Add((new CatalogEntry(
+                        attr.Category,
+                        attr.DisplayName,
+                        type,
+                        () => (IComponent)Activator.CreateInstance(type)!,
+                        attr.SingleInstance),
+                        attr.SortOrder));
+                        
+                }
+            }
+
+            found.Sort((x, y) =>
+            {
+                int ci = CompareCategory(x.Entry.Category, y.Entry.Category);
+                if (ci != 0) return ci;
+                if (x.SortOrder != y.SortOrder) return x.SortOrder - y.SortOrder;
+                return string.Compare(x.Entry.DisplayName, y.Entry.DisplayName, StringComparison.OrdinalIgnoreCase);
+            });
+            return found.Select(f => f.Entry).ToList();
+        }
+
+        private static int CompareCategory(string a, string b)
+        {
+            int ia = Array.IndexOf(Categories, a);
+            int ib = Array.IndexOf(Categories, b);
+            if (ia < 0 && ib < 0) return 0;
+            if (ia < 0) return 1;
+            if (ib < 0) return -1;
+            return ia - ib;
+        }
+
+        public static IReadOnlyList<CatalogEntry> BuiltInEntries => BuiltInEntriesCache;
 
         /// <summary>Spec §4 group names for a catalogue key (the catalog keys
         /// stay machine-facing; the UI shows these).</summary>
@@ -104,6 +126,7 @@ namespace V12Studio.Core
         /// Script entries carry their language; built-ins show their name.</summary>
         public static string EntryDisplayName(CatalogEntry entry)
         {
+            if (entry.Language != null) return $"{entry.DisplayName} ({entry.Language})";
             if (entry.ScriptPath == null) return entry.DisplayName;
             var lang = Path.GetExtension(entry.ScriptPath) switch
             {
@@ -121,8 +144,15 @@ namespace V12Studio.Core
             ".ct", ".orbt", ".oil", ".lua",
         };
 
+        private static readonly HashSet<string> IgnoredDirectories = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "bin", "obj", ".git", ".v12", ".godot", "node_modules",
+        };
+
         /// <summary>Discover script files under <paramref name="projectDir"/>
-        /// (depth ≤ 4) as "Your Components" catalogue entries.</summary>
+        /// (depth ≤ 4) as "Your Components" catalogue entries. C# files only
+        /// count when they live under a <c>scripts</c> folder — that is the
+        /// folder compiled into the project's component assembly.</summary>
         public static IReadOnlyList<CatalogEntry> DiscoverScripts(string? projectDir)
         {
             if (string.IsNullOrWhiteSpace(projectDir) || !Directory.Exists(projectDir))
@@ -132,9 +162,16 @@ namespace V12Studio.Core
             foreach (var file in Directory.EnumerateFiles(projectDir, "*", SearchOption.AllDirectories))
             {
                 var ext = Path.GetExtension(file);
-                if (!ScriptExtensions.Contains(ext)) continue;
-                var relDepth = Path.GetRelativePath(projectDir, file).Count(c => c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar);
-                if (relDepth > 4) continue;
+                bool isCSharp = ext.Equals(".cs", StringComparison.OrdinalIgnoreCase);
+                if (!isCSharp && !ScriptExtensions.Contains(ext)) continue;
+
+                var parts = Path.GetRelativePath(projectDir, file)
+                    .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (parts.Length > 5) continue;
+                if (parts.Any(p => IgnoredDirectories.Contains(p))) continue;
+                if (isCSharp && !parts.Any(p => string.Equals(p, "scripts", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
                 results.Add(new CatalogEntry(
                     YourComponentsCategory,
                     Path.GetFileNameWithoutExtension(file),
@@ -144,6 +181,34 @@ namespace V12Studio.Core
             return results
                 .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Compiled runtime C# component types (project scripts and loaded paks)
+        /// as catalogue entries tagged "(C#)". They attach like built-ins
+        /// through <see cref="CSharpComponentRegistry"/>.
+        /// </summary>
+        public static IReadOnlyList<CatalogEntry> DiscoverCSharpComponents()
+        {
+            var registry = CSharpComponentRegistry.FromGameRoot();
+            if (registry == null) return Array.Empty<CatalogEntry>();
+
+            var results = new List<CatalogEntry>();
+            foreach (var entry in registry.Entries
+                .OrderBy(e => e.SortOrder)
+                .ThenBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase))
+            {
+                string typeName = entry.TypeName;
+                results.Add(new CatalogEntry(
+                    entry.Category,
+                    entry.DisplayName,
+                    entry.Type,
+                    () => registry.Create(typeName),
+                    entry.SingleInstance,
+                    null,
+                    "C#"));
+            }
+            return results;
         }
 
         /// <summary>C# identifier check for custom component names.</summary>
