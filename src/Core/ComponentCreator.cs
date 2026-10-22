@@ -371,7 +371,7 @@ namespace V12Studio.Core
                     var init = type == "string" && !string.IsNullOrWhiteSpace(f.Default)
                         ? " = \"" + f.Default.Trim().Replace("\"", "\\\"") + "\";"
                         : "";
-                    sb.AppendLine($"    public {type} {f.Name}{init}");
+                    sb.AppendLine($"    public {type} {f.Name}{init};");
                 }
                 sb.AppendLine();
                 sb.AppendLine("    public override void Update(float deltaTime)");
