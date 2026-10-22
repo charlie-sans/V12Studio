@@ -1,7 +1,7 @@
 using System;
 using V12.Basic;
 using V12.Core;
-using V12.Monogame;
+// using V12.Monogame;
 
 namespace V12Studio.Launcher
 {
@@ -14,14 +14,14 @@ namespace V12Studio.Launcher
         [STAThread]
         public static void Main(string[] args)
         {
-            GameRoot.ConfigureLogging();
-            Console.WriteLine("Welcome to V12Studio (MonoGame renderer)");
+            // GameRoot.ConfigureLogging();
+            // Console.WriteLine("Welcome to V12Studio (MonoGame renderer)");
 
-            MonogameLauncher.Run(root =>
-            {
-                BasicRegistry.RegisterAll(root);
-                root.LoadGamepacksFromAssembly(typeof(V12StudioGamepack).Assembly);
-            });
+            // MonogameLauncher.Run(root =>
+            // {
+            //     BasicRegistry.RegisterAll(root);
+            //     root.LoadGamepacksFromAssembly(typeof(V12StudioGamepack).Assembly);
+            // });
         }
     }
 }

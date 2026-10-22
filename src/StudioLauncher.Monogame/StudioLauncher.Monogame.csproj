@@ -12,6 +12,6 @@
 	</ItemGroup>
 	<ItemGroup>
 	  <ProjectReference Include="$(V12MonogameProject)" />
-	  <ProjectReference Include="..\V12StudioPak.csproj" />
+
 	</ItemGroup>
 </Project>
