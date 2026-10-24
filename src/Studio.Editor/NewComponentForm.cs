@@ -67,7 +67,7 @@ namespace V12Studio.Editor
 
             _title = _ui.CreateLabel($"New Component: {target.Name ?? "(unnamed)"}");
 
-            foreach (var category in ComponentCatalog.Categories)
+            foreach (var category in ComponentCatalog.BuiltInEntries.Select(e => e.Category).Distinct())
                 _groupKeys.Add(category);
             _groupKeys.Add(ComponentCatalog.YourComponentsCategory);
             _groupKeys.Add(CustomLabel);

@@ -58,6 +58,7 @@ namespace V12Studio.Editor
         public void ShowMain()
         {
             var box = _ui.CreateVBox();
+            _ui.ApplyVariation(box, "Content");
             var sel = _session.Selected;
 
             if (sel == null || !_session.IsSceneElement(sel))
@@ -104,6 +105,7 @@ namespace V12Studio.Editor
 
                 var header = _ui.CreateHBox();
                 var fields = _ui.CreateVBox();
+                _ui.ApplyVariation(fields, "Content");
                 fields.Visible = !collapsed;
 
                 IButton toggle = null!;
@@ -124,7 +126,7 @@ namespace V12Studio.Editor
                 });
                 _ui.ApplyVariation(remove, "DangerButton");
 
-                header.AddChild(toggle, expand: true);
+                header.AddChild(toggle);
                 header.AddChild(remove);
                 card.AddChild(header);
 
@@ -157,15 +159,26 @@ namespace V12Studio.Editor
 
                     try
                     {
-                        component.BuildInspector(adapter);
+                        if (_ui is IInspectorHost host)
+                        {
+                            // Same inspector games use: one Paper/Origami adapter
+                            // for both hosts, driven by BuildInspector.
+                            fields.AddChild(host.CreateInspectorView(component, _shell.ProjectDir));
+                            hasInspectorContent = true;
+                        }
+                        else
+                        {
+                            component.BuildInspector(adapter);
+                            hasInspectorContent = adapter.ControlCount > 0;
+                            if (!hasInspectorContent)
+                                hasInspectorContent = AddGeneratedFields(fields, component);
+                        }
                     }
                     catch (Exception ex)
                     {
                         fields.AddChild(_ui.CreateLabel($"Inspector error: {ex.Message}"));
+                        hasInspectorContent = true;
                     }
-                    hasInspectorContent = adapter.ControlCount > 0;
-                    if (!hasInspectorContent)
-                        hasInspectorContent = AddGeneratedFields(fields, component);
 
                     // Script @field rows live in the script's own block, so a
                     // component reads as one unit instead of trailing rows.
@@ -209,6 +222,7 @@ namespace V12Studio.Editor
         private IContextMenu BuildAddComponentMenu(IWorldElement target)
         {
             var menu = _ui.CreateContextMenu();
+            menu.Searchable("Search components...");
 
             // Runtime C# components (project scripts + loaded paks) sit in
             // their declared category next to the built-ins.
@@ -226,9 +240,9 @@ namespace V12Studio.Editor
                 {
                     var e = entry;
                     sub.AddItem(ComponentCatalog.EntryDisplayName(e),
-                        () => AttachFromMenu(target, e));
+                        () => AttachFromMenu(target, e), icon: e.Icon);
                 }
-                menu.AddSubmenu(ComponentCatalog.CategoryTitle(key), sub);
+                menu.AddSubmenu(ComponentCatalog.CategoryTitle(key), sub, icon: CategoryIcon(key));
             }
 
             var scripts = ComponentCatalog.DiscoverScripts(_shell.ProjectDir);
@@ -239,15 +253,27 @@ namespace V12Studio.Editor
                 {
                     var e = entry;
                     sub.AddItem(ComponentCatalog.EntryDisplayName(e),
-                        () => AttachFromMenu(target, e));
+                        () => AttachFromMenu(target, e), icon: e.Icon);
                 }
-                menu.AddSubmenu(ComponentCatalog.YourComponentsCategory, sub);
+                menu.AddSubmenu(ComponentCatalog.YourComponentsCategory, sub, icon: "scroll");
             }
 
             menu.AddSeparator();
-            menu.AddItem("New Script Component…", () => ShowNewComponentForm(target));
+            menu.AddItem("New Script Component…", () => ShowNewComponentForm(target), icon: "scroll");
             return menu;
         }
+
+        private static string CategoryIcon(string key) => key switch
+        {
+            "TRANSFORM" => "arrows-up-down",
+            "RENDER" => "cube",
+            "LIGHTING" => "sun",
+            "PHYSICS" => "atom",
+            "AUDIO" => "volume-high",
+            "GAMEPLAY" => "gamepad",
+            "UI" => "bars-staggered",
+            _ => "scroll",
+        };
 
         private void AttachFromMenu(IWorldElement target, CatalogEntry entry)
         {
@@ -455,7 +481,7 @@ namespace V12Studio.Editor
             => _collapsed.TryGetValue(kind, out var collapsed) && collapsed;
 
         private static string HeaderText(string kind, bool collapsed)
-            => $"{(collapsed ? "▸" : "▾")} {kind}";
+            => $"{(collapsed ? ">" : "v")} {kind}";
 
         private void SetContent(IWidget widget)
         {

@@ -148,7 +148,8 @@ namespace V12Studio.Editor
             if (_grid.SelectedUserData is AssetRecord selected)
             {
                 _detail.Text = $"{selected.Type}  |  {selected.FullPath}";
-                _openScene.Enabled = selected.Type == "Scene";
+                _openScene.Text = selected.Type == "Script" ? "Edit script" : "Open scene";
+                _openScene.Enabled = selected.Type is "Scene" or "Script";
             }
             else
             {
@@ -164,7 +165,8 @@ namespace V12Studio.Editor
             if (data is AssetRecord asset)
             {
                 _detail.Text = $"{asset.Type}  |  {asset.FullPath}";
-                _openScene.Enabled = asset.Type == "Scene";
+                _openScene.Text = asset.Type == "Script" ? "Edit script" : "Open scene";
+                _openScene.Enabled = asset.Type is "Scene" or "Script";
             }
             else
             {
@@ -175,14 +177,21 @@ namespace V12Studio.Editor
 
         private void OnItemActivated(object data)
         {
-            if (data is AssetRecord { Type: "Scene" } scene)
-                _shell.Session.LoadScene(scene.FullPath, out _);
+            if (data is not AssetRecord asset) return;
+            if (asset.Type == "Scene")
+            {
+                _shell.Session.LoadScene(asset.FullPath, out _);
+                return;
+            }
+            if (asset.Type == "Script")
+                _shell.OpenScript(asset.FullPath);
         }
 
         private void OpenSelectedScene()
         {
-            if (_grid.SelectedUserData is AssetRecord { Type: "Scene" } scene)
-                _shell.Session.LoadScene(scene.FullPath, out _);
+            if (_grid.SelectedUserData is not AssetRecord asset) return;
+            if (asset.Type == "Scene") _shell.Session.LoadScene(asset.FullPath, out _);
+            else if (asset.Type == "Script") _shell.OpenScript(asset.FullPath);
         }
 
         private static string IconFor(string type) => type switch

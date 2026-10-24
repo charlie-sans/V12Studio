@@ -21,6 +21,8 @@ namespace V12Studio.Editor
         private readonly HierarchyOps _ops;
 
         private readonly ITreeView _tree;
+        private readonly ITextField _searchField;
+        private string _search = "";
 
         // Element → its current tree item. Rebuilt with the tree on every
         // HierarchyChanged pass; used only to bridge selection both ways.
@@ -44,13 +46,21 @@ namespace V12Studio.Editor
 
             Panel = _ui.CreatePanel("Hierarchy");
             var box = _ui.CreateVBox();
+            _searchField = _ui.CreateTextField("Search scene...", v =>
+            {
+                _search = v ?? "";
+                Rebuild();
+            });
+            _ui.ApplyVariation(_searchField, "SearchField");
             _tree = _ui.CreateTreeView();
             _tree.SetDropEnabled(true);
             _tree.SetOnSelectionChanged(OnTreeSelection);
             _tree.SetOnRenamed(OnRenamed);
             _tree.SetOnItemDropped(OnItemDropped);
             _tree.SetOnContextMenuRequested(OnContextMenuRequested);
+            _tree.SetOnTrailingIconClicked(OnTrailingIconClicked);
 
+            box.AddChild(_searchField);
             box.AddChild(_tree);
             Panel.AddChild(box);
 
@@ -71,11 +81,13 @@ namespace V12Studio.Editor
             {
                 _tree.Clear();
                 _items.Clear();
+                bool filtering = !string.IsNullOrWhiteSpace(_search);
+                _tree.SetEmptyMessage(filtering ? "No matching elements." : "Scene is empty.");
                 var world = _session.SceneWorld;
                 if (world != null)
                 {
                     foreach (var el in world.Root)
-                        AddRecursive(null, el, expanded);
+                        AddRecursive(null, el, expanded, filtering);
                 }
                 if (_session.Selected != null && _items.TryGetValue(_session.Selected, out var item))
                     _tree.SetSelected(item);
@@ -88,24 +100,61 @@ namespace V12Studio.Editor
             }
         }
 
-        private void AddRecursive(ITreeItem? parent, IWorldElement el, HashSet<IWorldElement> expanded)
+        private void AddRecursive(ITreeItem? parent, IWorldElement el, HashSet<IWorldElement> expanded, bool filtering)
         {
             // Editor plumbing (the camera, the game-view router) is real but not
             // user scene content: keep it out of the outliner.
             if (V12.Components.EditorOnlyComponent.IsEditorOnly(el)) return;
+
+            bool selfMatch = !filtering || Matches(el.Name);
+            bool childMatch = filtering && HasMatchingChild(el);
+            if (filtering && !selfMatch && !childMatch) return;
+
             var item = _tree.AddItem(parent, el.Name ?? "(unnamed)", el);
             item.IconKey = IconKeyFor(el);
-            if (expanded.Contains(el))
+            item.TrailingActive = el.Active;
+            item.TrailingIconKey = el.Active ? "eye" : "eye-slash";
+            if (filtering || expanded.Contains(el))
                 item.Expanded = true;
             _items[el] = item;
             foreach (var child in el.Children)
-                AddRecursive(item, child, expanded);
+                AddRecursive(item, child, expanded, filtering);
+        }
+
+        private bool Matches(string? name)
+            => !string.IsNullOrWhiteSpace(_search)
+               && (name ?? "").Contains(_search, StringComparison.OrdinalIgnoreCase);
+
+        private bool HasMatchingChild(IWorldElement el)
+        {
+            foreach (var child in el.Children)
+            {
+                if (V12.Components.EditorOnlyComponent.IsEditorOnly(child)) continue;
+                if (Matches(child.Name) || HasMatchingChild(child)) return true;
+            }
+            return false;
+        }
+
+        private void OnTrailingIconClicked(ITreeItem item)
+        {
+            if (item.UserData is not IWorldElement el) return;
+            el.Active = !el.Active;
+            item.TrailingActive = el.Active;
+            item.TrailingIconKey = el.Active ? "eye" : "eye-slash";
+            _session.NotifyHierarchyChanged();
         }
 
         private static string IconKeyFor(IWorldElement el)
         {
             if (el.GetComponent<V12.Basic.Components.CameraComponent>() != null) return "camera";
+            if (el.GetComponent<V12.Components.GenericLightComponent>() != null) return "light";
+            if (el.GetComponent<V12.Components.PointLightComponent>() != null) return "light";
+            if (el.GetComponent<V12.Components.SpotLightComponent>() != null) return "light";
+            if (el.GetComponent<V12.Components.MeshComponent>() != null) return "mesh";
+            if (el.GetComponent<V12.Components.Renderables.MeshRenderer>() != null) return "mesh";
+            if (el.GetComponent<V12.Components.AudioSourceComponent>() != null) return "audio";
             if (el.GetComponent<V12.Components.ScriptComponent>() != null) return "script";
+            if (el.GetComponent<V12.Components.UI.CanvasComponent>() != null) return "ui";
             return "element";
         }
 
@@ -206,15 +255,15 @@ namespace V12Studio.Editor
             menu.AddItem("Create Capsule Child", () => _ops.CreatePrimitive(PrimitiveKind.Capsule, null, el));
             menu.AddItem("Create Cylinder Child", () => _ops.CreatePrimitive(PrimitiveKind.Cylinder, null, el));
             menu.AddSeparator();
-            menu.AddItem("Rename", () => _tree.BeginRename(item));
-            menu.AddItem("Duplicate", () => _ops.Duplicate(el, out _));
+            menu.AddItem("Rename", () => _tree.BeginRename(item), icon: "pencil");
+            menu.AddItem("Duplicate", () => _ops.Duplicate(el, out _), icon: "copy");
             menu.AddItem("Group Children", () =>
             {
                 if (el.Children.Count > 0) _ops.Group(el.Children.ToList(), out _);
-            }, el.Children.Count > 0);
-            menu.AddItem("Add Component…", () => AddComponentRequested?.Invoke(el));
+            }, el.Children.Count > 0, icon: "object-group");
+            menu.AddItem("Add Component…", () => AddComponentRequested?.Invoke(el), icon: "plus");
             menu.AddSeparator();
-            menu.AddItem("Delete", () => _ops.Delete(el, out _));
+            menu.AddItem("Delete", () => _ops.Delete(el, out _), icon: "trash");
             return menu;
         }
     }

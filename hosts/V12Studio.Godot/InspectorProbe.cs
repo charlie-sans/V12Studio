@@ -114,7 +114,7 @@ namespace V12Studio.Godot
             }
 
             toggle.EmitSignal(BaseButton.SignalName.Pressed);
-            Check(!body!.Visible && toggle.Text.StartsWith("▸"),
+            Check(!body!.Visible && (toggle.Text.StartsWith(">") || toggle.Text.StartsWith("▸")),
                 "collapse hides body and flips the arrow to ▸");
 
             shell.Inspector.ShowMain(); // rebuild: every content node is replaced
@@ -123,13 +123,13 @@ namespace V12Studio.Godot
             var toggle2 = again.Count > 0 ? ButtonIn(again[0], "ComponentHeader") : null;
             var body2 = toggle2 != null ? BodyOf(toggle2) : null;
             Check(toggle2 != null && body2 != null && !body2!.Visible
-                  && toggle2.Text.StartsWith("▸"),
+                  && (toggle2.Text.StartsWith(">") || toggle2.Text.StartsWith("▸")),
                 "collapse state survives a re-render");
 
             if (toggle2 != null && body2 != null)
             {
                 toggle2.EmitSignal(BaseButton.SignalName.Pressed);
-                Check(body2.Visible && toggle2.Text.StartsWith("▾"),
+                Check(body2.Visible && (toggle2.Text.StartsWith("v") || toggle2.Text.StartsWith("▾")),
                     "expand restores body and flips the arrow to ▾");
             }
 

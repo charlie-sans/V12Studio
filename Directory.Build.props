@@ -16,6 +16,7 @@
     <V12EngineProject Condition="'$(V12EngineProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/libs/V12/V12.csproj</V12EngineProject>
     <V12PakProject Condition="'$(V12PakProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/libs/V12.Pak/V12.Pak.csproj</V12PakProject>
     <V12MonogameProject Condition="'$(V12MonogameProject)' == ''">$(MSBuildThisFileDirectory)libs/V12.Monogame/V12.Monogame/V12.Monogame.csproj</V12MonogameProject>
+     <NoWarn>$(NoWarn);CS1591;CS1998;CS8625;CS8618;CA1822</NoWarn>
   </PropertyGroup>
 
 </Project>

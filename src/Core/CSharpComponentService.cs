@@ -118,8 +118,11 @@ namespace V12Studio.Core
             var component = registry?.Create(typeName);
             if (component == null)
             {
-                message = $"Compiled, but no component named '{typeName}' was found. " +
-                          $"Name the class '{typeName}' and derive it from ScriptableComponent.";
+                message = registry == null || registry.Entries.Count == 0
+                    ? $"Compiled, but no components were registered from the project scripts. " +
+                      $"Check that '{typeName}' derives from ScriptableComponent."
+                    : $"Compiled, but no component named '{typeName}' was found. " +
+                      $"Name the class '{typeName}' and derive it from ScriptableComponent.";
                 return false;
             }
 

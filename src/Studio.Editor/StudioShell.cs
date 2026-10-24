@@ -9,7 +9,7 @@ namespace V12Studio.Editor
     /// <summary>
     /// Composes the whole editor against an <see cref="IUIProvider"/>: toolbar,
     /// hierarchy (left), game view + Project/Console/Packs tabs (center),
-    /// inspector (right), status strip. Host-agnostic — the host supplies the
+    /// inspector (right), status strip. Host-agnostic  -  the host supplies the
     /// provider and optionally the pre-built 3D viewport panel.
     /// </summary>
     public sealed class StudioShell
@@ -27,6 +27,10 @@ namespace V12Studio.Editor
 
         private readonly HierarchyPanel _hierarchy;
         private readonly InspectorPanel _inspector;
+        private readonly CodePanel _code;
+        private IDockSpaceWidget? _dock;
+        private ITabControl? _tabs;
+        private int _codeTabIndex = -1;
 
         /// <summary>The Inspector panel. Hosts use it for debug drives
         /// (opening a specific view behind a layout-dump flag).</summary>
@@ -35,6 +39,17 @@ namespace V12Studio.Editor
         /// <summary>The Hierarchy panel. Hosts use it for debug drives
         /// (input probes).</summary>
         public HierarchyPanel Hierarchy => _hierarchy;
+
+        /// <summary>The code editor tab (opened by double-clicking a script in the Project tab).</summary>
+        public CodePanel Code => _code;
+
+        /// <summary>Loads a file into the Code tab and brings that tab forward.</summary>
+        public void OpenScript(string path)
+        {
+            _code.Open(path);
+            if (_dock != null) _dock.ShowTab("Code");
+            else if (_tabs != null && _codeTabIndex >= 0) _tabs.SelectedTabIndex = _codeTabIndex;
+        }
         private ILabel _sceneLabel = null!;
         private ILabel _selectionLabel = null!;
 
@@ -54,6 +69,7 @@ namespace V12Studio.Editor
 
             _hierarchy = new HierarchyPanel(this);
             _inspector = new InspectorPanel(this);
+            _code = new CodePanel(this);
             _hierarchy.AddComponentRequested += _inspector.ShowAddComponentMenu;
         }
 
@@ -66,6 +82,14 @@ namespace V12Studio.Editor
         {
             var root = UI.CreateVBox();
             root.AddChild(BuildToolbar());
+
+            if (UI is IDockProvider dockProvider)
+            {
+                root.AddChild(BuildDock(dockProvider, gameViewPanel));
+                root.AddChild(BuildStatus());
+                container.AddChild(root);
+                return root;
+            }
 
             var outer = UI.CreateSplitter(SplitterOrientation.SideBySide);
             outer.SetFirst(_hierarchy.Panel);
@@ -91,6 +115,9 @@ namespace V12Studio.Editor
             tabs.AddTab("Project", new ProjectPanel(this).Panel);
             tabs.AddTab("Console", new ConsolePanel(this).Panel);
             tabs.AddTab("Packs", new PacksPanel(this).Panel);
+            tabs.AddTab("Code", _code.Panel);
+            _tabs = tabs;
+            _codeTabIndex = 3;
             center.SetSecond(tabs);
 
             mid.SetFirst(center);
@@ -101,6 +128,46 @@ namespace V12Studio.Editor
 
             container.AddChild(root);
             return root;
+        }
+
+        /// <summary>
+        /// Docking layout for hosts with a real dock surface (Paper/Origami): the
+        /// hierarchy and inspector are drag/tab targets, the game view sits above the
+        /// Project/Console/Packs tabs, and every divider is a live splitter.
+        /// </summary>
+        private IWidget BuildDock(IDockProvider provider, IPanel? gameViewPanel)
+        {
+            var dock = provider.CreateDockSpace();
+
+            IDockNode viewport;
+            if (gameViewPanel != null)
+            {
+                viewport = dock.Tabs(new DockTab("Viewport", gameViewPanel, closable: false));
+            }
+            else
+            {
+                var placeholder = UI.CreatePanel("GameView");
+                placeholder.AddChild(UI.CreateLabel("3D viewport is not available in this host."));
+                viewport = dock.Tabs(new DockTab("Viewport", placeholder, closable: false));
+            }
+
+            var bottom = dock.Tabs(
+                new DockTab("Project", new ProjectPanel(this).Panel, closable: false),
+                new DockTab("Console", new ConsolePanel(this).Panel, closable: false),
+                new DockTab("Packs", new PacksPanel(this).Panel, closable: false),
+                new DockTab("Code", _code.Panel, closable: false));
+
+            var center = dock.Split(DockOrientation.Vertical, 0.72f, viewport, bottom);
+
+            var right = dock.Tabs(new DockTab("Inspector", _inspector.Panel, closable: false));
+            var mid = dock.Split(DockOrientation.Horizontal, 0.80f, center, right);
+
+            var left = dock.Tabs(new DockTab("Hierarchy", _hierarchy.Panel, closable: false));
+            var root = dock.Split(DockOrientation.Horizontal, 0.20f, left, mid);
+
+            dock.SetRoot(root);
+            _dock = dock;
+            return dock;
         }
 
         private IWidget BuildToolbar()
@@ -170,10 +237,25 @@ namespace V12Studio.Editor
             });
             add.SelectedIndex = -1;
             bar.AddItem(add);
-            var names = UI.PalletNames.ToList();
-            var dd = UI.CreateDropdown(names, i => UI.SetPallet(names[i]));
-            bar.AddItem(dd);
-            
+
+            // Theme picker: only hosts with a real palette system offer one.
+            if (UI is IPaletteProvider palettes && palettes.PaletteNames.Count > 0)
+            {
+                var names = palettes.PaletteNames.ToList();
+                int current = Math.Max(0, names.FindIndex(n =>
+                    string.Equals(n, palettes.CurrentPalette, StringComparison.OrdinalIgnoreCase)));
+
+                IDropdown theme = null!;
+                theme = UI.CreateDropdown(names, index =>
+                {
+                    if (index < 0 || index >= names.Count) return;
+                    palettes.SetPalette(names[index]);
+                    theme.SelectedIndex = index;
+                });
+                theme.SelectedIndex = current;
+                bar.AddItem(theme);
+            }
+
             var dup = UI.CreateButton("Duplicate", () =>
             {
                 if (Session.Selected != null) Ops.Duplicate(Session.Selected, out _);
@@ -222,7 +304,7 @@ namespace V12Studio.Editor
                     ? ""
                     : $"Selected: {sel.Name ?? "(unnamed)"} ({sel.Components.Count} component(s))";
                 if (sel != null)
-                    _selectionLabel.Text += $" — {Ops.GetPath(sel)}";
+                    _selectionLabel.Text += $"  -  {Ops.GetPath(sel)}";
             };
             return row;
         }
@@ -265,3 +347,5 @@ namespace V12Studio.Editor
         }
     }
 }
+
+

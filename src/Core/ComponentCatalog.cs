@@ -8,6 +8,7 @@ using V12.Basic.Components;
 using V12.Bindings;
 using ComponentEntryAttribute = V12.Components.ComponentEntryAttribute;
 using TransformComponent = V12.Components.TransformComponent;
+using V12.Components.UI;
 
 namespace V12Studio.Core
 {
@@ -19,7 +20,8 @@ namespace V12Studio.Core
         Func<IComponent>? Factory,
         bool SingleInstance,
         string? ScriptPath = null,
-        string? Language = null);
+        string? Language = null,
+        string Icon = "");
 
     /// <summary>
     /// The component catalogue: engine built-ins plus script files discovered
@@ -31,7 +33,7 @@ namespace V12Studio.Core
         /// <summary>Built-in categories, in display order.</summary>
         public static readonly string[] Categories =
         {
-            "TRANSFORM", "RENDER", "LIGHTING", "PHYSICS", "AUDIO", "GAMEPLAY",
+            "TRANSFORM", "RENDER", "LIGHTING", "PHYSICS", "AUDIO", "GAMEPLAY", "UI",
         };
 
         /// <summary>Languages the New Component dialog can create, with the
@@ -55,6 +57,7 @@ namespace V12Studio.Core
         private static readonly Type[] CatalogAnchors =
         {
             typeof(TransformComponent),
+            typeof(CanvasComponent),
             typeof(CameraComponent),
         };
 
@@ -81,7 +84,8 @@ namespace V12Studio.Core
                         attr.DisplayName,
                         type,
                         () => (IComponent)Activator.CreateInstance(type)!,
-                        attr.SingleInstance),
+                        attr.SingleInstance,
+                        Icon: attr.Icon),
                         attr.SortOrder));
                         
                 }
@@ -119,6 +123,7 @@ namespace V12Studio.Core
             "PHYSICS" => "Physics",
             "AUDIO" => "Audio",
             "GAMEPLAY" => "Gameplay",
+            "UI" => "UI",
             _ => key, // "Your Components", "Custom script…"
         };
 
@@ -176,7 +181,8 @@ namespace V12Studio.Core
                     YourComponentsCategory,
                     Path.GetFileNameWithoutExtension(file),
                     null, null, false,
-                    file));
+                    file,
+                    Icon: "scroll"));
             }
             return results
                 .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -206,7 +212,8 @@ namespace V12Studio.Core
                     () => registry.Create(typeName),
                     entry.SingleInstance,
                     null,
-                    "C#"));
+                    "C#",
+                    entry.Type.GetCustomAttribute<ComponentEntryAttribute>()?.Icon ?? ""));
             }
             return results;
         }
