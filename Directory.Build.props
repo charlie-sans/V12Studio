@@ -21,4 +21,16 @@
      <NoWarn>$(NoWarn);CS1591;CS1998;CS8625;CS8618;CA1822</NoWarn>
   </PropertyGroup>
 
+  <!--
+    Prefer a sibling V12-Monorepo checkout when one exists next to this repo
+    (the standard local dev layout: D:\git\V12Studio + D:\git\V12-Monorepo).
+    Its root props redirects every V12*Project path to the sibling checkouts;
+    the libs/ defaults above remain the fallback for a standalone clone.
+  -->
+  <PropertyGroup>
+    <_V12StudioSiblingMonorepo>$(MSBuildThisFileDirectory)..\V12-Monorepo</_V12StudioSiblingMonorepo>
+    <_V12StudioMonorepoProps Condition="Exists('$(_V12StudioSiblingMonorepo)\Directory.Build.props')">$(_V12StudioSiblingMonorepo)\Directory.Build.props</_V12StudioMonorepoProps>
+  </PropertyGroup>
+  <Import Project="$(_V12StudioMonorepoProps)" Condition="'$(_V12StudioMonorepoProps)' != '' and Exists('$(_V12StudioMonorepoProps)')" />
+
 </Project>
