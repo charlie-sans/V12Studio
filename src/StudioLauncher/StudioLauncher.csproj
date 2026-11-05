@@ -8,7 +8,7 @@
 		<Configurations>Debug;Release;Editor</Configurations>
 	</PropertyGroup>
 	<ItemGroup>
-	  <ProjectReference Include="..\..\libs\nova\V12TwoDog.2dog\V12TwoDog.csproj" />
-	  <ProjectReference Include="..\V12StudioPak.csproj" />
+	  <ProjectReference Include="$(V12NovaProject)" />
+	  <ProjectReference Include="..\..\V12Studio.csproj" />
 	</ItemGroup>
 </Project>

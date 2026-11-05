@@ -1,36 +1,21 @@
 <Project>
 
   <!--
-    Locations of the V12 libraries the studio builds against. Each entry is only
-    a DEFAULT: override it (e.g. -p:V12BasicProject=..\V12.Basic\V12.Basic.csproj)
-    to build against a different checkout — a versioned copy, or a monorepo
-    where the libraries sit side by side instead of nested under libs/nova.
+    V12 is consumed from the sibling V12-Monorepo checkout (the standard local
+    layout: D:\git\V12Studio + D:\git\V12-Monorepo). The monorepo root props
+    below redirect every V12*Project path to its sibling checkouts, so the
+    studio has no vendored libs/ submodules.
 
-    Keep every reference to a given library pointing at ONE path. The same
-    project reached under two different paths gets two identities (e.g.
-    V12/1.0.0), which makes the SDK drop it from deps.json and Godot's
-    PluginLoadContext then cannot resolve the DLL at runtime.
+    Point V12MonorepoRoot (or the individual V12*Project paths) elsewhere with
+    -p: overrides if your checkouts live in a different place.
   -->
   <PropertyGroup>
-    <V12BasicProject Condition="'$(V12BasicProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/V12.Basic.csproj</V12BasicProject>
-    <V12BasicRoot Condition="'$(V12BasicRoot)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic</V12BasicRoot>
-    <V12EngineProject Condition="'$(V12EngineProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/libs/V12/V12.csproj</V12EngineProject>
-    <V12PakProject Condition="'$(V12PakProject)' == ''">$(MSBuildThisFileDirectory)libs/V12-sdk/libs/V12.pak/V12.Pak.csproj</V12PakProject>
-    <V12BindingsProject Condition="'$(V12BindingsProject)' == ''">$(MSBuildThisFileDirectory)libs/nova/libs/V12.Basic/libs/V12.Bindings/V12.Bindings.csproj</V12BindingsProject>
-    <V12MonogameProject Condition="'$(V12MonogameProject)' == ''">$(MSBuildThisFileDirectory)libs/V12.Monogame/V12.Monogame/V12.Monogame.csproj</V12MonogameProject>
-     <NoWarn>$(NoWarn);CS1591;CS1998;CS8625;CS8618;CA1822</NoWarn>
+    <V12MonorepoRoot Condition="'$(V12MonorepoRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\V12-Monorepo'))\</V12MonorepoRoot>
+    <V12NovaProject Condition="'$(V12NovaProject)' == ''">$(V12MonorepoRoot)Nova\V12TwoDog.2dog\V12TwoDog.csproj</V12NovaProject>
+    <V12NovaSharedProject Condition="'$(V12NovaSharedProject)' == ''">$(V12MonorepoRoot)Nova\Nova.Shared\Nova.Shared.csproj</V12NovaSharedProject>
+    <NoWarn>$(NoWarn);CS1591;CS1998;CS8625;CS8618;CA1822</NoWarn>
   </PropertyGroup>
 
-  <!--
-    Prefer a sibling V12-Monorepo checkout when one exists next to this repo
-    (the standard local dev layout: D:\git\V12Studio + D:\git\V12-Monorepo).
-    Its root props redirects every V12*Project path to the sibling checkouts;
-    the libs/ defaults above remain the fallback for a standalone clone.
-  -->
-  <PropertyGroup>
-    <_V12StudioSiblingMonorepo>$(MSBuildThisFileDirectory)..\V12-Monorepo</_V12StudioSiblingMonorepo>
-    <_V12StudioMonorepoProps Condition="Exists('$(_V12StudioSiblingMonorepo)\Directory.Build.props')">$(_V12StudioSiblingMonorepo)\Directory.Build.props</_V12StudioMonorepoProps>
-  </PropertyGroup>
-  <Import Project="$(_V12StudioMonorepoProps)" Condition="'$(_V12StudioMonorepoProps)' != '' and Exists('$(_V12StudioMonorepoProps)')" />
+  <Import Project="$(V12MonorepoRoot)Directory.Build.props" Condition="Exists('$(V12MonorepoRoot)Directory.Build.props')" />
 
 </Project>

@@ -1,45 +1,13 @@
 <Solution>
-  <Folder Name="/engine/">
-    <Project Path="libs/nova/libs/V12.Basic/libs/V12/V12.csproj" />
-  </Folder>
   <Folder Name="/hosts/">
     <Project Path="hosts/V12Studio.Godot/V12Studio.Godot.csproj">
       <BuildType Project="Debug" />
     </Project>
   </Folder>
-  <Folder Name="/libs/">
-    <Project Path="libs/nova/Nova.Shared/Nova.Shared.csproj" />
-    <Project Path="libs/nova/V12TwoDog.2dog/V12TwoDog.csproj" />
-    <Project Path="libs/V12-sdk/V12.Sdk.csproj" />
-  </Folder>
-  <Folder Name="/libs/nova/" />
-  <Folder Name="/libs/nova/libs/">
-    <Project Path="libs/nova/libs/V12.Basic/V12.Basic.csproj" />
-  </Folder>
-  <Folder Name="/libs/nova/libs/V12.Basic/" />
-  <Folder Name="/libs/nova/libs/V12.Basic/libs/">
-    <Project Path="libs/nova/libs/V12.Basic/libs/V12.Bindings/V12.Bindings.csproj" />
-    <Project Path="libs/nova/libs/V12.Basic/libs/V12.Pak/V12.Pak.csproj" />
-  </Folder>
-  <Folder Name="/libs/nova/libs/V12.Basic/libs/Contract/">
-    <Project Path="libs/nova/libs/V12.Basic/libs/Contract/Contract.Compiler/Contract.Compiler.csproj" />
-    <Project Path="libs/nova/libs/V12.Basic/libs/Contract/Contract.Runtime/Contract.Runtime.csproj" />
-  </Folder>
-  <Folder Name="/libs/nova/libs/V12.Basic/libs/Contract/libs/">
-    <Project Path="libs/nova/libs/V12.Basic/libs/Contract/libs/ObjektRT.Core/ObjektRT.Core.csproj" />
-    <Project Path="libs/nova/libs/V12.Basic/libs/Contract/libs/ObjektRT.Stdlib/ObjektRT.Stdlib.csproj" />
-  </Folder>
-  <Folder Name="/libs/nova/libs/V12.Basic/libs/Contract/libs/Objekt-RT/" />
-  <Folder Name="/libs/nova/libs/V12.Basic/libs/Contract/libs/Objekt-RT/src/">
-    <Project Path="libs/nova/libs/V12.Basic/libs/Contract/libs/Objekt-RT/src/ObjectRT.Abstractions/ObjectRT.Abstractions.csproj" />
-    <Project Path="libs/nova/libs/V12.Basic/libs/Contract/libs/Objekt-RT/src/ObjectRT.Runtime/ObjectRT.Runtime.csproj" />
-    <Project Path="libs/nova/libs/V12.Basic/libs/Contract/libs/Objekt-RT/src/ObjectRT.VM/ObjectRT.VM.csproj" />
-  </Folder>
-  <Project Path="src/V12StudioPak.csproj" />
+  <Project Path="V12Studio.csproj" />
   <Folder Name="/src/">
+    <Project Path="src/Studio.Core/Studio.Core.csproj" />
     <Project Path="src/Studio.Editor/Studio.Editor.csproj" />
+    <Project Path="src/StudioLauncher/StudioLauncher.csproj" />
   </Folder>
-  <Project Path="src/Studio.Core/Studio.Core.csproj" />
-  <Project Path="src/StudioLauncher/StudioLauncher.csproj" />
-  <Project Path="src/StudioLauncher.Monogame/StudioLauncher.Monogame.csproj" />
 </Solution>
