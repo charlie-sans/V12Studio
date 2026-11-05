@@ -41,11 +41,7 @@ namespace V12Studio.Core
         public World? EditorSceneWorld
         {
             get => _editorSceneWorld;
-            private set
-            {
-                _editorSceneWorld = value;
-                if (value != null) Root.EditorSceneWorld = value;
-            }
+            private set => _editorSceneWorld = value;
         }
         /// <summary>Backwards compat alias: returns <see cref="EditorSceneWorld"/>.</summary>
         public World? SceneWorld => EditorSceneWorld;

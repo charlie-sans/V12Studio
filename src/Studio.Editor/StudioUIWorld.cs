@@ -11,8 +11,8 @@ namespace V12Studio.Editor
 {
     /// <summary>
     /// Loads the editor's own chrome (status bar, later inspector cards) from
-    /// <c>ui/V12StudioUI.worldml</c> into a dedicated <see cref="World"/> held by
-    /// <see cref="GameRoot.EditorUIWorld"/>, and watches the file for live edits.
+    /// <c>ui/V12StudioUI.worldml</c> into a dedicated <see cref="World"/> owned by
+    /// the studio, and watches the file for live edits.
     ///
     /// The world is rendered by the editor's Paper layer through a shell host
     /// widget (see ProwlUIProvider), not the engine UI pass. Labels are
@@ -67,7 +67,6 @@ namespace V12Studio.Editor
                 world.AddElement(contents);
 
                 World = world;
-                _root.EditorUIWorld = world;
                 BindLabels();
                 _root.MarkRenderDirty();
                 GameRoot.Log?.Information("[StudioUIWorld] loaded '{Path}'", FilePath);
@@ -221,9 +220,6 @@ namespace V12Studio.Editor
 
             _watcher?.Dispose();
             _watcher = null;
-
-            if (World != null && ReferenceEquals(_root.EditorUIWorld, World))
-                _root.EditorUIWorld = null;
         }
     }
 }
