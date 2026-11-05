@@ -13,6 +13,7 @@ custom_features="dotnet"
 [application]
 
 config/name="V12 Studio"
+config/version="1.0.0"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7", "C#")
 run/low_processor_mode=true
@@ -22,6 +23,7 @@ config/icon="uid://b60mxoxyu7c7b"
 
 window/size/viewport_width=1600
 window/size/viewport_height=950
+window/vsync/vsync_mode=0
 
 [dotnet]
 
@@ -29,7 +31,7 @@ project/assembly_name="V12Studio.Godot"
 
 [editor]
 
-run/main_run_args="--project D:\\git\\EcoVR-Engine\\game\\"
+run/main_run_args="--project D:\\git\\Scramble-Studio"
 
 [editor_plugins]
 

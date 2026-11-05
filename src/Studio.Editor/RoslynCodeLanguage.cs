@@ -31,6 +31,13 @@ namespace V12Studio.Editor
         public override string? BlockCommentStart => "/*";
         public override string? BlockCommentEnd => "*/";
 
+        // '.' opens member/namespace completion immediately; without this the list only
+        // appears once a word char is typed (CompletionOnTyping), so `this.` alone shows nothing.
+        public override bool IsCompletionTrigger(char c) => c == '.';
+
+        // '(' and ',' refresh parameter hints while typing an argument list.
+        public override bool IsSignatureHelpTrigger(char c) => c == '(' || c == ',';
+
         public override POrigami.CodeLanguageSession? CreateSession(POrigami.CodeDocument document)
             => new RoslynCodeSession(document, _path, _projectDir);
     }

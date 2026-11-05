@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
-    <ProjectReference Include="..\V12StudioPak.csproj" />
+    <ProjectReference Include="..\Studio.Core\Studio.Core.csproj" />
     <ProjectReference Include="$(V12BasicProject)" />
     <ProjectReference Include="$(V12EngineProject)" />
   </ItemGroup>

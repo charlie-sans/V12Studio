@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsPackable>false</IsPackable>
+		<Configurations>Debug;Release;Editor</Configurations>
+
+		<!--
+			V12 Studio is a gamepak: a generic V12 renderer loads this assembly
+			from a .v12pak and runs V12StudioGamepack. EnableDynamicLoading makes
+			publish copy the project's dependencies next to the assembly so
+			vcsdk pack can stage them.
+		-->
+		<EnableDynamicLoading>true</EnableDynamicLoading>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+		<!-- Only the entry point lives in this project; everything else is in
+		     Studio.Core (session/commands) and Studio.Editor (host UI). -->
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="src\V12StudioGamepack.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="src\Studio.Core\Studio.Core.csproj" />
+		<ProjectReference Include="src\Studio.Editor\Studio.Editor.csproj" />
+		<ProjectReference Include="$(V12EngineProject)" />
+		<ProjectReference Include="$(V12BasicProject)" />
+	</ItemGroup>
+</Project>

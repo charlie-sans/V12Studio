@@ -3,8 +3,10 @@ using System.IO;
 using System.Linq;
 using Godot;
 using V12;
+using V12.Core;
 using V12.Core.Core.Interfaces;
 using V12.Core.UI;
+using V12.WorldML;
 using V12Studio.Core;
 using V12Studio.Editor;
 using V12TwoDog;
@@ -60,11 +62,17 @@ namespace V12Studio.Godot
         private string? _openScriptPath;
         private string? _probeDClick;
         private string? _probeDragPath;
+        private string? _studioUIPath;
+        private int _quitFrame;
         private StudioShell? _shell;
+        private StudioUIWorld? _studioUI;
         private int _frameCount;
 
         public override void _Ready()
         {
+            // This host builds its own editor chrome (StudioShell/Prowl), so the
+            // pak's root component must not also build the engine-UI shell.
+            V12Studio.Editor.StudioEditorBootstrap.HostOwnsUi = true;
 
             // Args can arrive two ways in Godot: engine-level args (what the
             // exported exe is handed, e.g. `V12Studio.exe --project=...`) show
@@ -113,6 +121,8 @@ namespace V12Studio.Godot
             _probeType = Option("--probe-type");
             _openScriptPath = Option("--open-script");
             _probeDClick = Option("--probe-dclick");
+            _studioUIPath = Option("--studio-ui");
+            _quitFrame = int.TryParse(Option("--quit-at"), out var quitAtFrame) ? quitAtFrame : 0;
             var _godotUI = bool.Parse(Option("--GodotUI") ?? "false");
             var options = new V12RuntimeOptions
             {
@@ -142,12 +152,28 @@ namespace V12Studio.Godot
             // input + direct transforms) feeding the Studio.Core service that
             // owns fly/orbit/picking/gizmo logic.
             _viewportAdapter = new GodotViewportAdapter(_renderer);
-            var interaction = new ViewportInteractionService(_runtime.Root, _viewportAdapter, _viewportAdapter, _viewportAdapter);
-            _runtime.Root.Registry.Register("IViewportInteraction", interaction);
+            var interaction = new V12.Core.UI.ViewportInteractionService(_runtime.Root, _viewportAdapter, _viewportAdapter, _viewportAdapter);
+            var viewportDialog = new ViewportFileDialog(_runtime.Root);
+            interaction.FileDialogHandler = viewportDialog.Open;
+            interaction.IsModalOpen = () => viewportDialog.IsOpen;
+            interaction.CancelModal = viewportDialog.Cancel;
+            _runtime.Root.Registry.RegisterOrReplace("IViewportInteraction", interaction);
 
-            var editor = Registry.Resolve<IEditor>()
-                ?? throw new InvalidOperationException("Studio pak did not register IEditor.");
-            var session = editor.Session;
+            // In the exported Godot host the pak and this assembly share one load
+            // context, so IEditor resolves. When the host is booted through the
+            // 2dog launcher the pak lives in another context; fall back to a
+            // host-created session instead of failing to boot (dev aid).
+            var editor = Registry.Resolve<IEditor>();
+            StudioSession session;
+            if (editor != null)
+            {
+                session = editor.Session;
+            }
+            else
+            {
+                GD.PrintErr("[StudioHost] Studio pak did not register IEditor in this load context; using a host session.");
+                session = new StudioSession(_runtime.Root);
+            }
             _session = session;
             session.Interaction = interaction;
             session.Dispatch = a => Callable.From(a).CallDeferred();
@@ -267,6 +293,26 @@ namespace V12Studio.Godot
             projectDir ??= ProjectSettings.GlobalizePath("res://");
             GD.Print($"[StudioHost] project directory: '{projectDir}'");
 
+            // Editor chrome from WorldML: a separate UI world rendered by the editor's
+            // Paper layer, watched for live edits. Falls back to the imperative status
+            // strip when the file is missing or fails to parse.
+            var studioUIPath = _studioUIPath ?? StudioUIWorld.FindDefaultPath(projectDir);
+            if (!string.IsNullOrEmpty(studioUIPath) && useProwlEditor)
+            {
+                var uiWorld = new StudioUIWorld(_runtime.Root, session, projectDir, studioUIPath);
+                if (uiWorld.Load())
+                {
+                    uiWorld.StartWatching();
+                    _studioUI = uiWorld;
+                    GD.Print($"[StudioHost] Editor UI world: '{uiWorld.FilePath}' (live reload)");
+                }
+                else
+                {
+                    uiWorld.Dispose();
+                    GD.PrintErr($"[StudioHost] Editor UI world failed to load: '{studioUIPath}'");
+                }
+            }
+
             // Pack-root asset resolution: mount the project directory as the
             // default v12:// mount so v12://textures/crate.png (and the
             // folder-named form v12://<ProjectName>/â€¦) resolve from the pack
@@ -282,8 +328,15 @@ namespace V12Studio.Godot
             if (string.IsNullOrEmpty(packMount)) packMount = "project";
             assetResolver.Mount(packMount, projectDir);
 
-            var shell = new StudioShell(_ui, session, projectDir);
+            var shell = new StudioShell(_ui, session, projectDir, externalStatus: _studioUI?.World != null);
             _shell = shell;
+            // The UI world's status strip is emitted as a real shell row so it
+            // reserves space and pushes the dock up instead of covering it.
+            if (_studioUI?.World != null && _ui is V12TwoDog.Paper.ProwlUIProvider worldUi)
+            {
+                shell.StatusHost = worldUi.CreateWorldUIHost();
+                GD.Print("[StudioHost] WorldML status host attached to shell");
+            }
             var root = shell.Build(container, gameViewPanel);
             if (root.NativeControl is Control rootControl)
                 GrowAll(rootControl);
@@ -489,6 +542,16 @@ namespace V12Studio.Godot
 
             _viewportAdapter?.PollInput();
             _viewportAdapter?.ApplyEditorDrivenTransforms();
+
+            // Hot-reload the WorldML chrome, then hand its captured frame to the
+            // shell's status host widget.
+            _studioUI?.Tick();
+            if (_studioUI?.World != null && _ui is V12TwoDog.Paper.ProwlUIProvider editorPaperUi
+                && _runtime != null)
+            {
+                editorPaperUi.SetWorldUIFrame(_runtime.Root.CaptureUI(_studioUI.World));
+            }
+
             _ui?.ProcessFrame(delta);
 
             if (_screenshotPath != null || _probePick || _probeGizmoScale || _probeDrag || _probeInput || _probeTreeDrag || _probeShared || _probeInspector || _probeRClick != null || _probeType != null || _openScriptPath != null || _probeDClick != null)
@@ -754,7 +817,13 @@ namespace V12Studio.Godot
                     }
                 }
 
-                int quitAt = _openScriptPath != null ? 260 : _probeGizmoScale ? 150 : _probeInput ? 66 : _probeShared ? 68 : _probeDrag || _probeTreeDrag || _probeInspector ? 100000 : 120;
+                int quitAt = _quitFrame > 0 ? _quitFrame
+                    : _openScriptPath != null ? 260
+                    : _probeGizmoScale ? 150
+                    : _probeInput ? 66
+                    : _probeShared ? 68
+                    : _probeDrag || _probeTreeDrag || _probeInspector ? 100000
+                    : 120;
                 if (_frameCount >= quitAt && _editorWindow != null
                     && GodotObject.IsInstanceValid(_editorWindow))
                 {
@@ -810,6 +879,8 @@ namespace V12Studio.Godot
         {
             if (what == NotificationPredelete)
             {
+                _studioUI?.Dispose();
+                _studioUI = null;
                 _renderer?.UnregisterSceneViewport(_viewportElementId);
                 _runtime?.Shutdown();
                 _runtime = null;
@@ -1060,5 +1131,7 @@ namespace V12Studio.Godot
         }
     }
 }
+
+
 
 

@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://388um6uq26p"]
+
+[ext_resource type="Script" uid="uid://vytfe7v0mfpb" path="res://StudioHost.cs" id="1_host"]
+[ext_resource type="PackedScene" uid="uid://cggqb75a8w8r" path="res://addons/debug_menu/debug_menu.tscn" id="2_0xm2m"]
+
+[node name="StudioHost" type="Node3D" unique_id=762710570]
+script = ExtResource("1_host")
+
+[node name="CanvasLayer" parent="." unique_id=414397422 instance=ExtResource("2_0xm2m")]

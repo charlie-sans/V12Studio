@@ -12,12 +12,14 @@ namespace V12Studio.Editor
         private readonly IUIProvider _ui;
         private readonly IVBox _root;
         private readonly string? _projectDir;
+        private readonly string? _componentName;
 
-        public StudioInspectorAdapter(IUIProvider ui, IVBox root, string? projectDir = null)
+        public StudioInspectorAdapter(IUIProvider ui, IVBox root, string? projectDir = null, string? componentName = null)
         {
             _ui = ui;
             _root = root;
             _projectDir = projectDir;
+            _componentName = componentName;
         }
 
         public int ControlCount { get; private set; }
@@ -140,6 +142,8 @@ namespace V12Studio.Editor
 
         public void Section(string title)
         {
+            if (!string.IsNullOrEmpty(_componentName) && string.Equals(title, _componentName, StringComparison.OrdinalIgnoreCase))
+                return;
             var label = _ui.CreateLabel(title);
             _ui.ApplyVariation(label, "SectionLabel");
             Add(label);
@@ -191,3 +195,4 @@ namespace V12Studio.Editor
         }
     }
 }
+

@@ -46,6 +46,29 @@ namespace V12Studio.Editor
 
             Panel = _ui.CreatePanel("Hierarchy");
             var box = _ui.CreateVBox();
+
+            var header = _ui.CreateLabel("HIERARCHY");
+            _ui.ApplyVariation(header, "GroupLabel");
+            var sceneLabel = _ui.CreateLabel(SceneTitle());
+            _ui.ApplyVariation(sceneLabel, "MutedLabel");
+            var actions = _ui.CreateHBox();
+            var addButton = _ui.CreateButton("Add", () => _ops.CreateEmpty(null));
+            var duplicateButton = _ui.CreateButton("Duplicate", () =>
+            {
+                if (_session.Selected != null) _ops.Duplicate(_session.Selected, out _);
+            });
+            var deleteButton = _ui.CreateButton("Delete", () =>
+            {
+                if (_session.Selected != null) _ops.Delete(_session.Selected, out _);
+            });
+            actions.AddChild(addButton);
+            actions.AddChild(duplicateButton);
+            actions.AddChild(deleteButton);
+
+            box.AddChild(header);
+            box.AddChild(sceneLabel);
+            box.AddChild(actions);
+
             _searchField = _ui.CreateTextField("Search scene...", v =>
             {
                 _search = v ?? "";
@@ -66,11 +89,16 @@ namespace V12Studio.Editor
 
             _session.HierarchyChanged += Rebuild;
             _session.SelectionChanged += SyncSelection;
+            _session.ScenePathChanged += () => sceneLabel.Text = SceneTitle();
             Rebuild();
         }
 
         /// <summary>Rebuild the whole tree from the scene world, preserving
         /// expansion state and selection where elements survived.</summary>
+        private string SceneTitle() => string.IsNullOrWhiteSpace(_session.ScenePath)
+            ? "Scene (unsaved)"
+            : System.IO.Path.GetFileNameWithoutExtension(_session.ScenePath);
+
         public void Rebuild()
         {
             var expanded = new HashSet<IWorldElement>(
@@ -268,3 +296,4 @@ namespace V12Studio.Editor
         }
     }
 }
+

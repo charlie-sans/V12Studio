@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using System.Reflection.Metadata;
 using POrigami = Prowl.OrigamiUI;
@@ -24,6 +25,21 @@ namespace V12Studio.Editor
         private static readonly CSharpParseOptions ParseOptions =
             new(LanguageVersion.Latest, kind: SourceCodeKind.Regular);
 
+        // Game/script projects build with <ImplicitUsings>enable</ImplicitUsings>, so
+        // System, LINQ, etc. are in scope without a directive. The editor has no such
+        // switch, so mirror the default .NET implicit global usings here to keep the
+        // analysis identical to the real build (e.g. MathF.PI without `using System;`).
+        private static readonly SyntaxTree ImplicitUsingsTree = CSharpSyntaxTree.ParseText(
+            SourceText.From(
+                "global using System;\n" +
+                "global using System.Collections.Generic;\n" +
+                "global using System.IO;\n" +
+                "global using System.Linq;\n" +
+                "global using System.Net.Http;\n" +
+                "global using System.Threading;\n" +
+                "global using System.Threading.Tasks;\n"),
+            ParseOptions, path: "__ImplicitUsings.g.cs");
+
         private static readonly Lazy<IReadOnlyList<MetadataReference>> References =
             new(BuildReferences, LazyThreadSafetyMode.ExecutionAndPublication);
 
@@ -31,6 +47,11 @@ namespace V12Studio.Editor
             new(StringComparer.OrdinalIgnoreCase);
 
         private static readonly object CacheLock = new();
+
+        // Types declared by referenced assemblies, indexed once so unimported type
+        // suggestions do not walk every metadata symbol on each keystroke.
+        private static IReadOnlyList<TypeEntry>? _referenceTypes;
+        private static readonly object TypeIndexLock = new();
 
         private readonly POrigami.CodeDocument _document;
         private readonly string _path;
@@ -52,7 +73,7 @@ namespace V12Studio.Editor
             var tree = CSharpSyntaxTree.ParseText(
                 SourceText.From(Text), ParseOptions, path: _path, cancellationToken: ct);
 
-            var trees = new List<SyntaxTree> { tree };
+            var trees = new List<SyntaxTree> { tree, ImplicitUsingsTree };
             if (!string.IsNullOrWhiteSpace(_projectDir))
                 trees.AddRange(ProjectSyntaxTrees(ct));
 
@@ -263,75 +284,835 @@ namespace V12Studio.Editor
             int offset, POrigami.CodeCompletionTrigger trigger, CancellationToken ct)
             => Task.Run<POrigami.CodeCompletionList?>(() =>
             {
-                var (compilation, tree) = Compile(ct);
-                var model = compilation.GetSemanticModel(tree);
-                var root = tree.GetRoot(ct);
-                int position = Math.Clamp(offset, 0, root.FullSpan.End);
-                int spanStart = WordStart(Text, position);
-
-                var items = new List<POrigami.CodeCompletionItem>(256);
-                var seen = new HashSet<string>(StringComparer.Ordinal);
-
-                foreach (var symbol in model.LookupSymbols(position, includeReducedExtensionMethods: true))
+                try
                 {
-                    ct.ThrowIfCancellationRequested();
-                    if (symbol.IsImplicitlyDeclared || string.IsNullOrEmpty(symbol.Name)) continue;
+                    var (compilation, tree) = Compile(ct);
+                    var model = compilation.GetSemanticModel(tree);
+                    var root = tree.GetRoot(ct);
+                    string text = Text;
+                    int position = Math.Clamp(offset, 0, root.FullSpan.End);
+                    int wordStart = WordStart(text, position);
 
-                    var kind = MapKind(symbol);
-                    string key = symbol.Name + "|" + kind;
-                    if (!seen.Add(key)) continue;
+                    // Never offer completions inside comments or string literals.
+                    if (IsInNonCode(root, position)) return null;
 
-                    string insert = symbol is IMethodSymbol { MethodKind: not MethodKind.Constructor } method
-                        ? method.Name
-                        : symbol.Name;
+                    var items = new List<POrigami.CodeCompletionItem>(256);
+                    var seen = new HashSet<string>(StringComparer.Ordinal);
+                    var seenNames = new HashSet<string>(StringComparer.Ordinal);
 
-                    items.Add(new POrigami.CodeCompletionItem
+                    // 1) `using ...;` and `namespace ...` directive names: complete
+                    //    namespaces (and, for `using static`, types/static members).
+                    if (TryGetDirectiveContext(root, text, position, out int nameStart, out int mode))
                     {
-                        Label = symbol.Name,
-                        Kind = kind,
-                        Detail = Detail(symbol),
-                        FilterText = symbol.Name,
-                        InsertText = insert,
-                        SortText = SortKey(symbol),
-                        Data = symbol,
-                    });
+                        string path = ComputePath(text, nameStart, wordStart);
+                        var symbol = ResolvePath(compilation.GlobalNamespace, path, ct);
+                        if (symbol != null)
+                        {
+                            bool includeTypes = mode == 1;
+                            bool includeStatic = mode == 1;
+                            AddNamespaceOrTypeMembers(symbol, includeTypes, includeStatic, items, seen, seenNames, ct);
+                        }
+                        return Done(items, wordStart);
+                    }
 
-                    if (items.Count >= 600) break;
-                }
-
-                foreach (var keyword in Keywords)
-                {
-                    if (!seen.Add(keyword + "|Keyword")) continue;
-                    items.Add(new POrigami.CodeCompletionItem
+                    // 2) After a dot: list the receiver's members or the namespace's
+                    //    contents, instead of every symbol merely in scope.
+                    if (TryResolveDotContext(model, root, text, position, wordStart, ct,
+                            out var namespaceOrType, out var receiverType, out bool staticAccess))
                     {
-                        Label = keyword,
-                        Kind = POrigami.CodeSymbolKind.Keyword,
-                        FilterText = keyword,
-                        InsertText = keyword,
-                        SortText = "4" + keyword,
-                    });
-                }
+                        if (namespaceOrType != null)
+                        {
+                            bool includeTypes = namespaceOrType is INamespaceSymbol;
+                            AddNamespaceOrTypeMembers(namespaceOrType, includeTypes, true, items, seen, seenNames, ct);
+                        }
+                        else if (receiverType != null)
+                        {
+                            AddMemberCompletions(model, position, receiverType, staticAccess, compilation, items, seen, seenNames, ct);
+                        }
+                        return Done(items, wordStart);
+                    }
 
-                // Only the typed word filters the list; keep the caret's word as the span.
-                int wordStart = spanStart;
-                if (wordStart < position && position <= Text.Length)
-                {
-                    // Trim the typed prefix from the word start only when it is part of
-                    // an identifier the user is extending (the editor uses spanStart for
-                    // filtering and replacement).
-                    wordStart = WordStart(Text, wordStart);
+                    // 3) General scope completion: locals, parameters, members, types,
+                    //    keywords, plus unimported types in type positions.
+                    AddGeneralCompletions(compilation, model, root, text, position, wordStart, items, seen, seenNames, ct);
+                    return Done(items, wordStart);
                 }
-
-                return (POrigami.CodeCompletionList?)new POrigami.CodeCompletionList
+                catch (OperationCanceledException) { return null; }
+                catch (Exception ex)
                 {
-                    Items = items,
-                    SpanStart = wordStart,
-                };
+                    Console.WriteLine($"[Roslyn] completion failed: {ex}");
+                    return null;
+                }
             }, ct);
+
+        private static POrigami.CodeCompletionList Done(
+            List<POrigami.CodeCompletionItem> items, int spanStart)
+            => new()
+            {
+                Items = items,
+                SpanStart = spanStart,
+            };
 
         public override Task<POrigami.CodeQuickInfo?> GetCompletionDescriptionAsync(
             POrigami.CodeCompletionItem item, CancellationToken ct)
-            => Task.FromResult(item.Data is ISymbol symbol ? QuickInfo(symbol, 0, 0) : null);
+        {
+            if (item.Data is UnimportedTypeRef unimported)
+            {
+                string display = string.IsNullOrEmpty(unimported.Namespace)
+                    ? unimported.TypeName
+                    : unimported.Namespace + "." + unimported.TypeName;
+                return Task.FromResult<POrigami.CodeQuickInfo?>(new POrigami.CodeQuickInfo
+                {
+                    Signature = new[] { new POrigami.CodeTaggedText(display, POrigami.CodeTokenKind.Class) },
+                    Documentation = new[]
+                    {
+                        string.IsNullOrEmpty(unimported.Namespace)
+                            ? "Global namespace type."
+                            : $"Adds 'using {unimported.Namespace};' when committed.",
+                    },
+                });
+            }
+            return Task.FromResult(item.Data is ISymbol symbol ? QuickInfo(symbol, 0, 0) : null);
+        }
+
+        /// <summary>
+        /// Commits a completion. Imported-type suggestions insert the missing
+        /// `using` directive as well as the type name; everything else falls back
+        /// to the editor's default replace-the-word behaviour.
+        /// </summary>
+        public override POrigami.CodeCompletionCommit? ResolveCompletion(
+            POrigami.CodeCompletionList list, POrigami.CodeCompletionItem item, int caretOffset, char commitChar)
+        {
+            if (item.Data is not UnimportedTypeRef unimported) return null;
+            if (string.IsNullOrEmpty(unimported.Namespace)) return null; // global: default insert is enough
+
+            string text = Text;
+            var root = CSharpSyntaxTree.ParseText(SourceText.From(text), ParseOptions, path: _path).GetRoot();
+
+            int start = Math.Clamp(list.SpanStart, 0, text.Length);
+            int end = Math.Clamp(caretOffset, start, text.Length);
+            // The editor replaces the whole word under the caret; match that here.
+            while (end < text.Length && (char.IsLetterOrDigit(text[end]) || text[end] == '_')) end++;
+
+            var edits = new List<POrigami.CodeTextEdit>
+            {
+                new(start, end - start, unimported.TypeName),
+            };
+
+            int usingLength = 0;
+            int insertPos = -1;
+            if (!HasUsing(root, unimported.Namespace))
+            {
+                insertPos = UsingInsertPosition(root, text);
+                if (insertPos >= 0)
+                {
+                    string newline = insertPos > 0 && text[insertPos - 1] != '\n' ? "\n" : "";
+                    string directive = newline + "using " + unimported.Namespace + ";\n";
+                    edits.Add(new POrigami.CodeTextEdit(insertPos, 0, directive));
+                    usingLength = directive.Length;
+                }
+            }
+
+            int caret = start + unimported.TypeName.Length
+                + (usingLength > 0 && insertPos <= start ? usingLength : 0);
+
+            return new POrigami.CodeCompletionCommit
+            {
+                Edits = edits,
+                CaretOffset = caret,
+            };
+        }
+
+        private static string ComputePath(string text, int nameStart, int wordStart)
+        {
+            int from = Math.Clamp(nameStart, 0, text.Length);
+            int to = Math.Clamp(wordStart, from, text.Length);
+            string before = text.Substring(from, to - from).Trim();
+            if (before.EndsWith('.')) before = before[..^1];
+            return before.Trim();
+        }
+
+        private static bool TryGetDirectiveContext(
+            SyntaxNode root, string text, int position, out int nameStart, out int mode)
+        {
+            nameStart = -1;
+            mode = 0;
+            if (position <= 0) return false;
+
+            var token = root.FindToken(position, findInsideTrivia: true);
+
+            var usingDir = FindAncestor<UsingDirectiveSyntax>(token.Parent);
+            if (usingDir == null)
+                usingDir = FindAncestor<UsingDirectiveSyntax>(
+                    root.FindToken(position - 1, findInsideTrivia: true).Parent);
+
+            if (usingDir != null && position <= usingDir.Span.End)
+            {
+                // Completing the alias identifier (before '=') is not a namespace path.
+                if (usingDir.Alias != null && position <= usingDir.Alias.Span.End)
+                    return false;
+
+                if (usingDir.Name == null || usingDir.Name.IsMissing)
+                {
+                    int after = usingDir.UsingKeyword.Span.End;
+                    int i = after;
+                    while (i < text.Length && (text[i] == ' ' || text[i] == '\t')) i++;
+                    nameStart = i;
+                }
+                else
+                {
+                    nameStart = usingDir.Name.SpanStart;
+                }
+                mode = usingDir.StaticKeyword.IsKind(SyntaxKind.StaticKeyword) ? 1 : 0;
+                return true;
+            }
+
+            var nsDecl = FindAncestor<BaseNamespaceDeclarationSyntax>(token.Parent);
+            if (nsDecl == null)
+                nsDecl = FindAncestor<BaseNamespaceDeclarationSyntax>(
+                    root.FindToken(position - 1, findInsideTrivia: true).Parent);
+
+            if (nsDecl != null)
+            {
+                var name = nsDecl.Name;
+                if (name == null || name.IsMissing)
+                {
+                    int after = nsDecl.NamespaceKeyword.Span.End;
+                    int i = after;
+                    while (i < text.Length && (text[i] == ' ' || text[i] == '\t')) i++;
+                    nameStart = i;
+                    mode = 2;
+                    return true;
+                }
+
+                // Only while editing the name itself, not somewhere in the namespace body.
+                if (position >= name.SpanStart && position <= name.Span.End)
+                {
+                    nameStart = name.SpanStart;
+                    mode = 2;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static INamespaceOrTypeSymbol? ResolvePath(
+            INamespaceSymbol rootNamespace, string path, CancellationToken ct)
+        {
+            if (string.IsNullOrEmpty(path)) return rootNamespace;
+
+            INamespaceOrTypeSymbol current = rootNamespace;
+            foreach (var segment in path.Split('.'))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (segment.Length == 0) continue;
+                INamespaceOrTypeSymbol? next = current switch
+                {
+                    INamespaceSymbol ns => ns.GetMembers(segment)
+                        .OfType<INamespaceOrTypeSymbol>()
+                        .FirstOrDefault(),
+                    INamedTypeSymbol type => type.GetTypeMembers(segment).FirstOrDefault(),
+                    _ => null,
+                };
+                if (next == null) return null;
+                current = next;
+            }
+            return current;
+        }
+
+        private static void AddNamespaceOrTypeMembers(
+            INamespaceOrTypeSymbol symbol, bool includeTypes, bool includeStaticMembers,
+            List<POrigami.CodeCompletionItem> items,
+            HashSet<string> seen, HashSet<string> seenNames, CancellationToken ct)
+        {
+            if (symbol is INamespaceSymbol ns)
+            {
+                foreach (var child in ns.GetNamespaceMembers())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    AddRawItem(items, seen, seenNames,
+                        child.Name, POrigami.CodeSymbolKind.Namespace,
+                        string.IsNullOrEmpty(child.ToDisplayString()) ? "global" : child.ToDisplayString(),
+                        "2" + child.Name, child);
+                }
+
+                if (includeTypes)
+                {
+                    foreach (var type in ns.GetTypeMembers())
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        if (!IsAccessibleType(type)) continue;
+                        AddSymbolItem(type, items, seen, seenNames);
+                    }
+                }
+            }
+            else if (symbol is INamedTypeSymbol type && includeStaticMembers)
+            {
+                foreach (var member in type.GetMembers())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (member.IsImplicitlyDeclared || string.IsNullOrEmpty(member.Name)) continue;
+                    if (member is IMethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.StaticConstructor or MethodKind.Destructor }) continue;
+
+                    if (member is INamedTypeSymbol)
+                    {
+                        AddSymbolItem(member, items, seen, seenNames);
+                        continue;
+                    }
+                    if (!member.IsStatic) continue;
+                    AddSymbolItem(member, items, seen, seenNames);
+                }
+            }
+        }
+
+        private static bool TryResolveDotContext(
+            SemanticModel model, SyntaxNode root, string text, int position, int wordStart, CancellationToken ct,
+            out INamespaceOrTypeSymbol? namespaceOrType, out ITypeSymbol? receiverType, out bool staticAccess)
+        {
+            namespaceOrType = null;
+            receiverType = null;
+            staticAccess = false;
+
+            if (wordStart <= 0 || text[wordStart - 1] != '.') return false;
+            int dotPos = wordStart - 1;
+            var dotToken = root.FindToken(dotPos, findInsideTrivia: true);
+
+            SyntaxNode? left = dotToken.Parent switch
+            {
+                MemberAccessExpressionSyntax ma when ma.OperatorToken == dotToken => ma.Expression,
+                ConditionalAccessExpressionSyntax ca when ca.OperatorToken == dotToken => ca.Expression,
+                QualifiedNameSyntax qn when qn.DotToken == dotToken => qn.Left,
+                _ => null,
+            };
+            if (left == null) return false;
+
+            var info = model.GetSymbolInfo(left, ct);
+            if (info.Symbol is INamespaceSymbol ns)
+            {
+                namespaceOrType = ns;
+                return true;
+            }
+            if (info.Symbol is ITypeSymbol typeSymbol)
+            {
+                namespaceOrType = typeSymbol;
+                staticAccess = true;
+                return true;
+            }
+
+            var type = model.GetTypeInfo(left, ct).Type;
+            if (type != null && type.TypeKind != TypeKind.Error)
+            {
+                receiverType = type;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static void AddMemberCompletions(
+            SemanticModel model, int position, ITypeSymbol receiverType, bool staticAccess,
+            CSharpCompilation compilation,
+            List<POrigami.CodeCompletionItem> items,
+            HashSet<string> seen, HashSet<string> seenNames, CancellationToken ct)
+        {
+            // LookupSymbols needs an INamedTypeSymbol container; map arrays and type
+            // parameters to a type whose members are actually callable.
+            INamedTypeSymbol? named = receiverType as INamedTypeSymbol;
+            if (named == null)
+            {
+                if (receiverType is IArrayTypeSymbol)
+                    named = compilation.GetSpecialType(SpecialType.System_Array);
+                else if (receiverType is ITypeParameterSymbol tp)
+                    named = tp.ConstraintTypes.OfType<INamedTypeSymbol>().FirstOrDefault()
+                        ?? compilation.GetSpecialType(SpecialType.System_Object);
+                else
+                    named = compilation.GetSpecialType(SpecialType.System_Object);
+            }
+
+            foreach (var symbol in model.LookupSymbols(position, container: named, includeReducedExtensionMethods: true))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (symbol.IsImplicitlyDeclared || string.IsNullOrEmpty(symbol.Name)) continue;
+                if (symbol is IMethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.StaticConstructor or MethodKind.Destructor })
+                    continue;
+
+                if (staticAccess)
+                {
+                    // `Type.`: static members and nested types only.
+                    if (!symbol.IsStatic && symbol is not INamedTypeSymbol) continue;
+                }
+                else
+                {
+                    // `value.`: instance members and extension methods only.
+                    if (symbol is INamedTypeSymbol) continue;
+                    if (symbol.IsStatic && symbol is not IMethodSymbol { IsExtensionMethod: true }) continue;
+                }
+
+                AddSymbolItem(symbol, items, seen, seenNames);
+            }
+        }
+
+        private static void AddGeneralCompletions(
+            CSharpCompilation compilation, SemanticModel model, SyntaxNode root, string text,
+            int position, int wordStart,
+            List<POrigami.CodeCompletionItem> items,
+            HashSet<string> seen, HashSet<string> seenNames, CancellationToken ct)
+        {
+            foreach (var symbol in model.LookupSymbols(position, includeReducedExtensionMethods: true))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (symbol.IsImplicitlyDeclared || string.IsNullOrEmpty(symbol.Name)) continue;
+                AddSymbolItem(symbol, items, seen, seenNames);
+                if (items.Count >= 600) break;
+            }
+
+            foreach (var keyword in Keywords)
+            {
+                if (!seen.Add(keyword + "|Keyword")) continue;
+                seenNames.Add(keyword);
+                items.Add(new POrigami.CodeCompletionItem
+                {
+                    Label = keyword,
+                    Kind = POrigami.CodeSymbolKind.Keyword,
+                    FilterText = keyword,
+                    InsertText = keyword,
+                    SortText = "4" + keyword,
+                });
+            }
+
+            int prefixLength = Math.Clamp(position - wordStart, 0, text.Length);
+            if (prefixLength >= 1 && IsTypeContext(root, text, wordStart))
+            {
+                string prefix = text.Substring(wordStart, prefixLength);
+                AddUnimportedTypes(compilation, prefix, items, seen, seenNames, ct);
+            }
+        }
+
+        private static void AddUnimportedTypes(
+            CSharpCompilation compilation, string prefix,
+            List<POrigami.CodeCompletionItem> items,
+            HashSet<string> seen, HashSet<string> seenNames, CancellationToken ct)
+        {
+            var referenceTypes = GetReferenceTypes(compilation, ct);
+            var sourceTypes = new List<TypeEntry>();
+            CollectTypeEntries(compilation.Assembly.GlobalNamespace, sourceTypes,
+                new HashSet<string>(StringComparer.Ordinal), ct);
+
+            int added = 0;
+            foreach (var entry in EnumerateEntries(referenceTypes, sourceTypes))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (added >= 150) break;
+                if (!entry.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!seenNames.Add(entry.Name)) continue;
+
+                string detail = string.IsNullOrEmpty(entry.Namespace)
+                    ? "global namespace"
+                    : "(using " + entry.Namespace + ")";
+
+                items.Add(new POrigami.CodeCompletionItem
+                {
+                    Label = entry.Name,
+                    Kind = entry.Kind,
+                    Detail = detail,
+                    FilterText = entry.Name,
+                    InsertText = entry.Name,
+                    SortText = "5" + entry.Name,
+                    Data = new UnimportedTypeRef { TypeName = entry.Name, Namespace = entry.Namespace },
+                });
+                seen.Add(entry.Name + "|Unimported");
+                added++;
+            }
+        }
+
+        private static IEnumerable<TypeEntry> EnumerateEntries(
+            IReadOnlyList<TypeEntry> references, IReadOnlyList<TypeEntry> source)
+        {
+            foreach (var entry in source) yield return entry;
+            foreach (var entry in references) yield return entry;
+        }
+
+        private static IReadOnlyList<TypeEntry> GetReferenceTypes(
+            CSharpCompilation compilation, CancellationToken ct)
+        {
+            var cached = _referenceTypes;
+            if (cached != null) return cached;
+
+            lock (TypeIndexLock)
+            {
+                if (_referenceTypes != null) return _referenceTypes;
+
+                var list = new List<TypeEntry>();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var reference in compilation.References)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly)
+                        continue;
+                    CollectTypeEntries(assembly.GlobalNamespace, list, seen, ct);
+                }
+
+                _referenceTypes = list;
+                return list;
+            }
+        }
+
+        private static void CollectTypeEntries(
+            INamespaceSymbol ns, List<TypeEntry> into, HashSet<string> seen, CancellationToken ct)
+        {
+            if (into.Count >= 120_000) return;
+            ct.ThrowIfCancellationRequested();
+
+            foreach (var child in ns.GetNamespaceMembers())
+                CollectTypeEntries(child, into, seen, ct);
+
+            string nsName = ns.IsGlobalNamespace ? "" : ns.ToDisplayString();
+            foreach (var type in ns.GetTypeMembers())
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!IsAccessibleType(type)) continue;
+                string key = type.Name + "|" + nsName;
+                if (!seen.Add(key)) continue;
+                into.Add(new TypeEntry
+                {
+                    Name = type.Name,
+                    Namespace = nsName,
+                    Kind = MapKind(type),
+                });
+            }
+        }
+
+        private static bool IsAccessibleType(INamedTypeSymbol type)
+        {
+            if (type.IsImplicitlyDeclared) return false;
+            if (string.IsNullOrEmpty(type.Name) || type.Name[0] == '<') return false;
+            return type.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal
+                or Accessibility.ProtectedOrInternal;
+        }
+
+        private static bool HasUsing(SyntaxNode root, string ns)
+        {
+            foreach (var directive in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+            {
+                if (directive.Name == null) continue;
+                if (directive.Alias != null) continue;
+                if (!directive.StaticKeyword.IsKind(SyntaxKind.None)) continue;
+                if (string.Equals(directive.Name.ToString().Trim(), ns, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        private static int UsingInsertPosition(SyntaxNode root, string text)
+        {
+            var topUsings = root.ChildNodes().OfType<UsingDirectiveSyntax>().ToList();
+            if (topUsings.Count > 0)
+                return AfterDirective(text, topUsings[^1]);
+
+            var ns = root.ChildNodes().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault();
+            if (ns != null)
+            {
+                if (ns is FileScopedNamespaceDeclarationSyntax fileScoped)
+                    return AfterToken(text, fileScoped.SemicolonToken);
+                if (ns is NamespaceDeclarationSyntax block)
+                    return AfterToken(text, block.OpenBraceToken);
+            }
+
+            return 0;
+        }
+
+        private static int AfterDirective(string text, UsingDirectiveSyntax directive)
+            => AfterToken(text, directive.SemicolonToken);
+
+        private static int AfterToken(string text, SyntaxToken token)
+        {
+            int end = token.Span.End;
+            if (end < text.Length && text[end] == '\r') end++;
+            if (end < text.Length && text[end] == '\n') end++;
+            return end;
+        }
+
+        private static bool IsInNonCode(SyntaxNode root, int position)
+        {
+            var trivia = root.FindTrivia(position, findInsideTrivia: true);
+            if (trivia.RawKind != 0 && (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)
+                || trivia.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia)
+                || trivia.IsKind(SyntaxKind.MultiLineDocumentationCommentTrivia)
+                || trivia.IsKind(SyntaxKind.DisabledTextTrivia)))
+                return true;
+
+            var token = root.FindToken(position, findInsideTrivia: false);
+            if (position > token.SpanStart && position < token.Span.End)
+            {
+                if (token.IsKind(SyntaxKind.StringLiteralToken)
+                    || token.IsKind(SyntaxKind.Utf8StringLiteralToken)
+                    || token.IsKind(SyntaxKind.SingleLineRawStringLiteralToken)
+                    || token.IsKind(SyntaxKind.MultiLineRawStringLiteralToken)
+                    || token.IsKind(SyntaxKind.Utf8SingleLineRawStringLiteralToken)
+                    || token.IsKind(SyntaxKind.Utf8MultiLineRawStringLiteralToken)
+                    || token.IsKind(SyntaxKind.CharacterLiteralToken))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool IsTypeContext(SyntaxNode root, string text, int wordStart)
+        {
+            if (wordStart <= 0) return true;
+
+            int i = wordStart;
+            while (i > 0 && (text[i - 1] == ' ' || text[i - 1] == '\t')) i--;
+            if (i <= 0) return true;
+
+            var token = root.FindToken(i - 1, findInsideTrivia: true);
+            return token.Kind() switch
+            {
+                SyntaxKind.NewKeyword or SyntaxKind.IsKeyword or SyntaxKind.AsKeyword
+                    or SyntaxKind.TypeOfKeyword or SyntaxKind.DefaultKeyword
+                    or SyntaxKind.SizeOfKeyword or SyntaxKind.StackAllocKeyword
+                    or SyntaxKind.ColonToken or SyntaxKind.LessThanToken
+                    or SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword
+                    or SyntaxKind.PublicKeyword or SyntaxKind.PrivateKeyword
+                    or SyntaxKind.ProtectedKeyword or SyntaxKind.InternalKeyword
+                    or SyntaxKind.StaticKeyword or SyntaxKind.ReadOnlyKeyword
+                    or SyntaxKind.ConstKeyword or SyntaxKind.AbstractKeyword
+                    or SyntaxKind.SealedKeyword or SyntaxKind.PartialKeyword
+                    or SyntaxKind.VirtualKeyword or SyntaxKind.OverrideKeyword
+                    or SyntaxKind.ExternKeyword or SyntaxKind.UnsafeKeyword
+                    or SyntaxKind.AsyncKeyword
+                    or SyntaxKind.OpenBraceToken or SyntaxKind.CloseBraceToken
+                    or SyntaxKind.SemicolonToken => true,
+                _ => false,
+            };
+        }
+
+        private static void AddSymbolItem(
+            ISymbol symbol, List<POrigami.CodeCompletionItem> items,
+            HashSet<string> seen, HashSet<string> seenNames)
+        {
+            if (symbol.IsImplicitlyDeclared || string.IsNullOrEmpty(symbol.Name)) return;
+            var kind = MapKind(symbol);
+            if (!seen.Add(symbol.Name + "|" + kind)) return;
+            seenNames.Add(symbol.Name);
+
+            string insert = symbol is IMethodSymbol { MethodKind: not MethodKind.Constructor } method
+                ? method.Name
+                : symbol.Name;
+
+            items.Add(new POrigami.CodeCompletionItem
+            {
+                Label = symbol.Name,
+                Kind = kind,
+                Detail = Detail(symbol),
+                FilterText = symbol.Name,
+                InsertText = insert,
+                SortText = SortKey(symbol),
+                Data = symbol,
+            });
+        }
+
+        private static void AddRawItem(
+            List<POrigami.CodeCompletionItem> items,
+            HashSet<string> seen, HashSet<string> seenNames,
+            string name, POrigami.CodeSymbolKind kind, string detail, string sortText, ISymbol data)
+        {
+            if (string.IsNullOrEmpty(name)) return;
+            if (!seen.Add(name + "|" + kind)) return;
+            seenNames.Add(name);
+            items.Add(new POrigami.CodeCompletionItem
+            {
+                Label = name,
+                Kind = kind,
+                Detail = detail,
+                FilterText = name,
+                InsertText = name,
+                SortText = sortText,
+                Data = data,
+            });
+        }
+
+        // ── Signature help ──────────────────────────────────────────────────
+
+        public override Task<POrigami.CodeSignatureHelp?> GetSignatureHelpAsync(int offset, CancellationToken ct)
+            => Task.Run<POrigami.CodeSignatureHelp?>(() =>
+            {
+                try
+                {
+                    var (compilation, tree) = Compile(ct);
+                    var model = compilation.GetSemanticModel(tree);
+                    var root = tree.GetRoot(ct);
+                    int position = Math.Clamp(offset, 0, root.FullSpan.End);
+
+                    var argList = FindArgumentList(root, position);
+                    if (argList == null) return null;
+
+                    ISymbol? target = argList.Parent switch
+                    {
+                        InvocationExpressionSyntax invocation => model.GetSymbolInfo(invocation, ct).Symbol,
+                        ObjectCreationExpressionSyntax creation => model.GetSymbolInfo(creation, ct).Symbol,
+                        ImplicitObjectCreationExpressionSyntax implicitCreation => model.GetSymbolInfo(implicitCreation, ct).Symbol,
+                        ConstructorInitializerSyntax initializer => model.GetSymbolInfo(initializer, ct).Symbol,
+                        _ => null,
+                    };
+
+                    var methods = CollectOverloads(target, compilation);
+                    if (methods.Count == 0) return null;
+
+                    // Active parameter: each top-level comma before the caret advances it.
+                    int activeParameter = 0;
+                    foreach (var child in argList.ChildNodesAndTokens())
+                    {
+                        if (child.IsToken && child.AsToken().IsKind(SyntaxKind.CommaToken)
+                            && child.Span.End <= position)
+                            activeParameter++;
+                    }
+
+                    var signatures = new List<POrigami.CodeSignature>();
+                    int activeSignature = 0;
+                    for (int i = 0; i < methods.Count; i++)
+                    {
+                        bool constructor = methods[i].MethodKind is MethodKind.Constructor or MethodKind.StaticConstructor;
+                        signatures.Add(BuildSignature(methods[i], constructor));
+                        if (SymbolEqualityComparer.Default.Equals(methods[i], target))
+                            activeSignature = i;
+                    }
+
+                    if (activeSignature == 0 && target is IMethodSymbol resolved
+                        && resolved.ReducedFrom != null)
+                        activeSignature = 0;
+
+                    return new POrigami.CodeSignatureHelp
+                    {
+                        Signatures = signatures,
+                        ActiveSignature = Math.Clamp(activeSignature, 0, signatures.Count - 1),
+                        ActiveParameter = activeParameter,
+                        ArgumentListStart = argList.OpenParenToken.SpanStart,
+                    };
+                }
+                catch (OperationCanceledException) { return null; }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Roslyn] signature help failed: {ex}");
+                    return null;
+                }
+            }, ct);
+
+        private static ArgumentListSyntax? FindArgumentList(SyntaxNode root, int position)
+        {
+            var token = root.FindToken(position, findInsideTrivia: true);
+            for (var node = token.Parent; node != null; node = node.Parent)
+            {
+                if (node is ArgumentListSyntax list)
+                {
+                    if (position < list.OpenParenToken.Span.End) return null;
+                    if (!list.CloseParenToken.IsMissing && position > list.CloseParenToken.SpanStart)
+                        return null;
+                    return list;
+                }
+                if (node is StatementSyntax or MemberDeclarationSyntax) break;
+            }
+            return null;
+        }
+
+        private static List<IMethodSymbol> CollectOverloads(ISymbol? target, CSharpCompilation compilation)
+        {
+            const int Max = 24;
+            var methods = new List<IMethodSymbol>();
+
+            if (target is IMethodSymbol method)
+            {
+                if (method.MethodKind == MethodKind.ReducedExtension)
+                {
+                    methods.Add(method);
+                    return methods;
+                }
+
+                var container = method.ContainingType;
+                if (container != null)
+                {
+                    foreach (var candidate in container.GetMembers(method.Name).OfType<IMethodSymbol>())
+                    {
+                        if (candidate.MethodKind is not (MethodKind.Ordinary or MethodKind.Constructor or MethodKind.StaticConstructor))
+                            continue;
+                        methods.Add(candidate);
+                        if (methods.Count >= Max) break;
+                    }
+                }
+                if (methods.Count == 0) methods.Add(method);
+                return methods;
+            }
+
+            if (target is INamedTypeSymbol type)
+            {
+                foreach (var constructor in type.InstanceConstructors)
+                {
+                    methods.Add(constructor);
+                    if (methods.Count >= Max) break;
+                }
+            }
+
+            return methods;
+        }
+
+        private static POrigami.CodeSignature BuildSignature(IMethodSymbol method, bool constructor)
+        {
+            var parts = new List<POrigami.CodeTaggedText>();
+            var parameters = new List<POrigami.CodeSignatureParameter>();
+
+            string name = constructor
+                ? method.ContainingType?.Name ?? method.Name
+                : method.Name;
+
+            parts.Add(new POrigami.CodeTaggedText(name,
+                constructor ? POrigami.CodeTokenKind.Class : POrigami.CodeTokenKind.Method));
+            parts.Add(new POrigami.CodeTaggedText("(", POrigami.CodeTokenKind.Punctuation));
+            int pos = name.Length + 1;
+
+            for (int i = 0; i < method.Parameters.Length; i++)
+            {
+                if (i > 0)
+                {
+                    parts.Add(new POrigami.CodeTaggedText(", ", POrigami.CodeTokenKind.Punctuation));
+                    pos += 2;
+                }
+
+                var parameter = method.Parameters[i];
+                string label = parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                    + " " + parameter.Name;
+
+                var docs = Documentation(parameter);
+                parameters.Add(new POrigami.CodeSignatureParameter
+                {
+                    Name = parameter.Name,
+                    Documentation = docs.Count > 0 ? string.Join(" ", docs) : null,
+                    LabelStart = pos,
+                    LabelLength = label.Length,
+                });
+
+                parts.Add(new POrigami.CodeTaggedText(label, POrigami.CodeTokenKind.Parameter));
+                pos += label.Length;
+            }
+
+            parts.Add(new POrigami.CodeTaggedText(")", POrigami.CodeTokenKind.Punctuation));
+
+            if (!constructor && !method.ReturnsVoid)
+            {
+                parts.Add(new POrigami.CodeTaggedText(" : ", POrigami.CodeTokenKind.Punctuation));
+                parts.Add(new POrigami.CodeTaggedText(
+                    method.ReturnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    POrigami.CodeTokenKind.Class));
+            }
+
+            var methodDocs = Documentation(method);
+            return new POrigami.CodeSignature
+            {
+                Parts = parts,
+                Parameters = parameters,
+                Documentation = methodDocs.Count > 0 ? string.Join(" ", methodDocs) : null,
+            };
+        }
 
         // ── Hover / quick info ──────────────────────────────────────────────
 
@@ -426,7 +1207,7 @@ namespace V12Studio.Editor
                 if (symbol == null) return Array.Empty<POrigami.CodeLocation>();
 
                 var locations = new List<POrigami.CodeLocation>();
-                foreach (var candidate in root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.IdentifierNameSyntax>())
+                foreach (var candidate in root.DescendantNodes().OfType<IdentifierNameSyntax>())
                 {
                     ct.ThrowIfCancellationRequested();
                     if (candidate.Identifier.ValueText != symbol.Name) continue;
@@ -452,6 +1233,13 @@ namespace V12Studio.Editor
             }, ct);
 
         // ── Helpers ─────────────────────────────────────────────────────────
+
+        private static T? FindAncestor<T>(SyntaxNode? node) where T : SyntaxNode
+        {
+            for (; node != null; node = node.Parent)
+                if (node is T match) return match;
+            return null;
+        }
 
         private static int WordStart(string text, int position)
         {
@@ -541,6 +1329,19 @@ namespace V12Studio.Editor
             int end = text.IndexOf('\n', start);
             if (end < 0) end = text.Length;
             return text.Substring(start, Math.Max(0, end - start)).Trim();
+        }
+
+        private sealed class UnimportedTypeRef
+        {
+            public string TypeName { get; init; } = "";
+            public string Namespace { get; init; } = "";
+        }
+
+        private sealed class TypeEntry
+        {
+            public string Name { get; init; } = "";
+            public string Namespace { get; init; } = "";
+            public POrigami.CodeSymbolKind Kind { get; init; }
         }
 
         private static readonly string[] Keywords =

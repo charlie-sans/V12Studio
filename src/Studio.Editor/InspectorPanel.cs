@@ -24,6 +24,7 @@ namespace V12Studio.Editor
         private readonly StudioSession _session;
 
         private IWidget? _currentRoot;
+        private IVBox? _contentHost;
         private IButton? _addComponentButton;
         private bool _showingForm;
 
@@ -47,10 +48,10 @@ namespace V12Studio.Editor
             // three number fields) measures ~347px plus panel padding. Without
             // a floor the ratio split squeezes this pane (15% ≈ 215px at
             // 1920) and the component Remove buttons land off-screen.
-            Panel.MinWidth = 360f;
+            if (_ui is V12.UI.Paper.PaperUIProvider) Panel.MinWidth = 360f;
             ShowMain();
             // A selection change while the New Component form is open cancels
-            // the form — the inspector always tracks the current selection.
+            // the form �?" the inspector always tracks the current selection.
             _session.SelectionChanged += ShowMain;
         }
 
@@ -81,7 +82,7 @@ namespace V12Studio.Editor
             box.AddChild(nameRow);
 
             TransformRow(box, "Position", TransformEdit.PositionOf(sel),
-                (el, x, y, z) => TransformEdit.SetPosition(el, x, y, z), "F2");
+                (el, x, y, z) => TransformEdit.SetPosition(el, x, y, z), "F2", snapStep: 1f);
             TransformRow(box, "Rotation", TransformEdit.RotationDegreesOf(sel),
                 (el, x, y, z) => TransformEdit.SetRotationDegrees(el, x, y, z), "F1");
             TransformRow(box, "Scale", TransformEdit.ScaleOf(sel),
@@ -100,13 +101,7 @@ namespace V12Studio.Editor
                 var kind = FriendlyName(component);
                 var collapsed = IsCollapsed(kind);
 
-                var card = _ui.CreatePanel($"component-{kind}");
-                _ui.ApplyVariation(card, "ComponentCard");
-
-                var header = _ui.CreateHBox();
-                var fields = _ui.CreateVBox();
-                _ui.ApplyVariation(fields, "Content");
-                fields.Visible = !collapsed;
+                var fields = new FieldHost(box) { Visible = !collapsed };
 
                 IButton toggle = null!;
                 toggle = _ui.CreateButton(HeaderText(kind, collapsed), () =>
@@ -117,6 +112,8 @@ namespace V12Studio.Editor
                     fields.Visible = !next;
                 });
                 _ui.ApplyVariation(toggle, "ComponentHeader");
+                if (_ui is V12.UI.Paper.PaperUIProvider togglePaper)
+                    togglePaper.ConfigureLayout(toggle, preferredWidth: 140f, expand: false);
 
                 var remove = _ui.CreateButton("Remove", () =>
                 {
@@ -125,12 +122,12 @@ namespace V12Studio.Editor
                     ShowMain();
                 });
                 _ui.ApplyVariation(remove, "DangerButton");
+                if (_ui is V12.UI.Paper.PaperUIProvider removePaper)
+                    removePaper.ConfigureLayout(remove, preferredWidth: 80f, expand: false);
 
-                header.AddChild(toggle);
-                header.AddChild(remove);
-                card.AddChild(header);
+                box.AddChild(toggle);
 
-                var adapter = new StudioInspectorAdapter(_ui, fields, _shell.ProjectDir);
+                var adapter = new StudioInspectorAdapter(_ui, fields, _shell.ProjectDir, kind);
                 bool hasInspectorContent;
 
                 if (component is TransformComponent)
@@ -141,6 +138,7 @@ namespace V12Studio.Editor
                     // store, and restating it here in a different layout
                     // would only duplicate those rows confusingly.
                     fields.AddChild(_ui.CreateLabel("(edited in the rows above)"));
+                    fields.AddChild(remove);
                     hasInspectorContent = true;
                 }
                 else
@@ -155,6 +153,7 @@ namespace V12Studio.Editor
                     var persistBox = _ui.CreateCheckbox("", component.IsPersistent);
                     persistBox.SetOnChanged(v => component.IsPersistent = v);
                     persistRow.AddChild(persistBox);
+                    persistRow.AddChild(remove);
                     fields.AddChild(persistRow);
 
                     try
@@ -188,9 +187,8 @@ namespace V12Studio.Editor
                     hasInspectorContent = true; // the persistence row is always content
                 }
 
-                if (hasInspectorContent)
-                    card.AddChild(fields);
-                box.AddChild(card);
+                if (!hasInspectorContent)
+                    fields.Visible = false;
             }
 
             var add = _ui.CreateButton("Add Component…", () => ShowAddComponentMenu(sel));
@@ -298,7 +296,8 @@ namespace V12Studio.Editor
 
         private void TransformRow(IVBox box, string label,
             (float X, float Y, float Z) current,
-            Action<IWorldElement, float, float, float> apply, string format)
+            Action<IWorldElement, float, float, float> apply, string format,
+            float snapStep = 0f)
         {
             var row = _ui.CreateHBox();
             row.AddChild(InspectorLayout.RowLabel(_ui, label));
@@ -306,9 +305,15 @@ namespace V12Studio.Editor
             var x = _ui.CreateNumericField(current.X, format);
             var y = _ui.CreateNumericField(current.Y, format);
             var z = _ui.CreateNumericField(current.Z, format);
-            row.AddChild(LabeledAxis("X", x));
-            row.AddChild(LabeledAxis("Y", y));
-            row.AddChild(LabeledAxis("Z", z));
+            if (_ui is V12.UI.Paper.PaperUIProvider axisPaper)
+            {
+                axisPaper.ConfigureLayout(x, preferredWidth: 56f, expand: false);
+                axisPaper.ConfigureLayout(y, preferredWidth: 56f, expand: false);
+                axisPaper.ConfigureLayout(z, preferredWidth: 56f, expand: false);
+            }
+            AddAxis(row, "X", x, snapStep);
+            AddAxis(row, "Y", y, snapStep);
+            AddAxis(row, "Z", z, snapStep);
 
             void Apply()
             {
@@ -321,12 +326,22 @@ namespace V12Studio.Editor
             box.AddChild(row);
         }
 
-        private IWidget LabeledAxis(string axis, INumericField field)
+        private void AddAxis(IHBox row, string axis, INumericField field, float snapStep)
         {
-            var box = _ui.CreateHBox();
-            box.AddChild(_ui.CreateLabel(axis));
-            box.AddChild(field);
-            return box;
+            // A provider that can draw the axis tag as its own drag handle does
+            // so, so the letter scrubs the value (Control snaps to snapStep).
+            if (field is IScrubbableNumericField scrub)
+            {
+                scrub.ScrubLabel = axis;
+                scrub.SnapStep = snapStep;
+                if (scrub.RendersScrubLabel)
+                {
+                    row.AddChild(field);
+                    return;
+                }
+            }
+            row.AddChild(_ui.CreateLabel(axis));
+            row.AddChild(field);
         }
 
         private static readonly System.Collections.Generic.HashSet<string> GeneratedFieldExclusions = new(StringComparer.Ordinal)
@@ -483,12 +498,63 @@ namespace V12Studio.Editor
         private static string HeaderText(string kind, bool collapsed)
             => $"{(collapsed ? ">" : "v")} {kind}";
 
+        /// <summary>IVBox facade that adds rows directly to the inspector column,
+        /// avoiding a nested VBox whose auto height does not contribute to the
+        /// Paper column. Visibility still toggles every row for foldouts.</summary>
+        private sealed class FieldHost : IVBox
+        {
+            private readonly IVBox _target;
+            private readonly System.Collections.Generic.List<IWidget> _children = new();
+            private bool _visible = true;
+
+            public FieldHost(IVBox target) => _target = target;
+
+            public object NativeControl => _target.NativeControl;
+            public bool Visible
+            {
+                get => _visible;
+                set
+                {
+                    _visible = value;
+                    foreach (var child in _children) child.Visible = value;
+                }
+            }
+            public bool Expand { get => _target.Expand; set => _target.Expand = value; }
+
+            public void AddChild(IWidget child)
+            {
+                _children.Add(child);
+                child.Visible = _visible;
+                _target.AddChild(child);
+            }
+
+            public void RemoveChild(IWidget child)
+            {
+                _children.Remove(child);
+                _target.RemoveChild(child);
+            }
+        }
+
         private void SetContent(IWidget widget)
         {
-            if (_currentRoot != null)
-                Panel.RemoveChild(_currentRoot);
-            Panel.AddChild(widget);
+            var host = _ui.CreateVBox();
+            _ui.ApplyVariation(host, "Content");
+            var header = _ui.CreateLabel("INSPECTOR");
+            _ui.ApplyVariation(header, "GroupLabel");
+            host.AddChild(header);
+            host.AddChild(widget);
+
+            if (_contentHost != null)
+                Panel.RemoveChild(_contentHost);
+            Panel.AddChild(host);
+            _contentHost = host;
             _currentRoot = widget;
         }
     }
 }
+
+
+
+
+
+

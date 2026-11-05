@@ -1,6 +1,8 @@
+using System;
 using V12;
 using V12.Basic;
-using V12Studio.Core;
+using V12.Core;
+using V12Studio.Editor;
 
 public class V12StudioGamepack : IV12Gamepack
 {
@@ -11,20 +13,24 @@ public class V12StudioGamepack : IV12Gamepack
         // The engine's standard service registrations (rendering, scripting,
         // audio…). Safe to double-register — Registry.Register ignores
         // existing names.
-        var root = V12.Core.GameRoot.Instance;
+        var root = GameRoot.Instance;
         if (root == null) return;
         BasicRegistry.RegisterAll(root);
 
-        // Host-agnostic editor session. The pak builds no UI; hosts resolve
-        // IEditor from the registry and compose the editor against it.
-        var session = new StudioSession(root);
-        Registry.Register<IEditor>(session);
+        // The studio boots from a root component, not from host code: it
+        // registers the editor session (IEditor) and builds the renderer-neutral
+        // engine-UI shell on the first world tick. Hosts that build their own
+        // chrome set StudioEditorBootstrap.HostOwnsUi before creating the runtime.
+        var bootstrap = new Element("V12StudioBootstrap");
+        bootstrap.AddComponent(new StudioEditorComponent
+        {
+            ProjectDir = AppContext.BaseDirectory,
+        });
+        root.PersistentWorld.AddElement(bootstrap);
     }
 
     public void OnStart()
     {
-        // Scene world + demo content is created by the host after it has
-        // registered the viewport interaction service, so the orbit camera
-        // and gizmo are live from the first visible frame.
+        // Initialization is handled by V12StudioBootstrap/StudioEditorComponent.
     }
 }

@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<World name="V12StudioUI">
+  <!--
+    V12Studio editor chrome - first pass: bottom status strip.
+    This file is the live source for the editor's own window: edit it and the
+    Studio picks it up without restarting (StudioUIWorld, ~250 ms debounce).
+    It can also be packed with vcsdk into a v12pak and loaded by any game as
+    an overlay world.
+
+    Templates use ${key} interpolation (word chars only, missing -> "0").
+    `name`/`description`/`template` are reserved element attributes and cannot
+    be driven through overrides - bake them into the template.
+  -->
+  <Templates>
+    <!-- Reusable row for a status label: <Instance template="StatusItem" text="..." /> -->
+    <Template name="StatusItem">
+      <Element name="Item">
+        <UIStyleComponent Flat="true" StyleHint="muted" />
+        <LabelComponent text="${text}" FontSize="12" />
+      </Element>
+    </Template>
+    <!-- Reusable inspector field skeleton for P1 -->
+    <Template name="InspectorField">
+      <Element name="Field">
+        <HLayoutComponent spacing="4" padding="2" />
+        <Element name="FieldLabel">
+          <LabelComponent text="${label}" />
+        </Element>
+        <Element name="FieldValue">
+          <!-- value component (Slider/Numeric/etc.) is added by the binder -->
+        </Element>
+      </Element>
+    </Template>
+  </Templates>
+
+  <!-- Root canvas for the editor chrome. ScreenSpace draws as Paper UI; the
+       Studio hosts it as the bottom shell row. -->
+  <Element name="Shell">
+    <CanvasComponent ScreenSpace="true" AnchorX="0.5" AnchorY="1" />
+
+    <Element name="StatusBar">
+      <HLayoutComponent spacing="8" padding="4" />
+      <!-- Three labels are bound to the session by StudioUIWorld (code, not XML). -->
+      <Element name="ProjectLabel">
+        <UIStyleComponent Flat="true" />
+        <LabelComponent text="Project: (loading)" FontSize="12" />
+      </Element>
+      <Element name="SceneLabel">
+        <UIStyleComponent Flat="true" StyleHint="muted" />
+        <LabelComponent text="Scene: (unsaved)" FontSize="12" />
+      </Element>
+      <Element name="SelectionLabel">
+        <UIStyleComponent Flat="true" StyleHint="muted" />
+        <LabelComponent text="" FontSize="12" />
+      </Element>
+
+      <!-- Template instance: proves <Templates>/<Instance> expansion live. -->
+      <Instance template="StatusItem" text="WorldML" />
+    </Element>
+  </Element>
+</World>

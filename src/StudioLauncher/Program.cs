@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using V12.Core;
 using V12TwoDog;
 using V12Studio;
@@ -7,7 +8,7 @@ namespace V12Studio.Launcher
 {
     /// <summary>
     /// Boots V12 Studio by starting the V12 host and pumping its frame loop.
-    /// The studio itself (V12StudioPak) is renderer-agnostic and only exposes
+    /// The studio itself (V12Studio) is renderer-agnostic and only exposes
     /// an IV12Gamepack; this launcher is the renderer-aware entry point.
     /// </summary>
     public static class StudioLauncher
@@ -22,7 +23,7 @@ namespace V12Studio.Launcher
             // (BasicRegistry.RegisterAll + LoadGamepacksFromAssembly): on nova
             // the pak assembly is picked up by RootLoop.DiscoverHostGamepaks,
             // which scans THIS entry assembly's direct references. That only
-            // works if the compiler keeps the V12StudioPak reference in our
+            // works if the compiler keeps the V12Studio reference in our
             // metadata — with no code touching it, the reference is dropped
             // and discovery silently falls back to the Sample Game. Touching
             // the pak type below (and logging it, so the use can't be trimmed)
@@ -30,9 +31,22 @@ namespace V12Studio.Launcher
             var studioPakAssembly = typeof(V12StudioGamepack).Assembly;
             Console.WriteLine($"[StudioLauncher] Booting '{studioPakAssembly.GetName().Name}' on nova...");
 
+            // --project <dir>: run a Godot project other than the one embedded
+            // by the renderer (used to boot hosts/V12Studio.Godot in dev).
+            string? projectDir = null;
+            var forwarded = new List<string>();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], "--project", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    projectDir = args[++i];
+                    continue;
+                }
+                forwarded.Add(args[i]);
+            }
+
             using var host = new V12Host();
-            
-            host.Start(args: args);
+            host.Start(projectDir, forwarded.ToArray());
             while (!host.Iteration())
             {
             }
